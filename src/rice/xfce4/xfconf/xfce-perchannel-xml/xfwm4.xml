@@ -23,14 +23,14 @@
     <property name="double_click_distance" type="int" value="5"/>
     <property name="double_click_time" type="int" value="250"/>
     <property name="easy_click" type="string" value="Alt"/>
-    <property name="focus_delay" type="int" value="250"/>
+    <property name="focus_delay" type="int" value="150"/>
     <property name="focus_hint" type="bool" value="true"/>
     <property name="focus_new" type="bool" value="true"/>
-    <property name="frame_opacity" type="int" value="80"/>
+    <property name="frame_opacity" type="int" value="88"/>
     <property name="frame_border_top" type="int" value="0"/>
     <property name="full_width_title" type="bool" value="true"/>
     <property name="horiz_scroll_opacity" type="bool" value="false"/>
-    <property name="inactive_opacity" type="int" value="93"/>
+    <property name="inactive_opacity" type="int" value="85"/>
     <property name="maximized_offset" type="int" value="0"/>
     <property name="mousewheel_rollup" type="bool" value="true"/>
     <property name="move_opacity" type="int" value="90"/>
@@ -45,11 +45,11 @@
     <property name="repeat_urgent_blink" type="bool" value="false"/>
     <property name="resize_opacity" type="int" value="90"/>
     <property name="scroll_workspaces" type="bool" value="true"/>
-    <property name="shadow_delta_height" type="int" value="0"/>
-    <property name="shadow_delta_width" type="int" value="0"/>
-    <property name="shadow_delta_x" type="int" value="0"/>
-    <property name="shadow_delta_y" type="int" value="-3"/>
-    <property name="shadow_opacity" type="int" value="50"/>
+    <property name="shadow_delta_height" type="int" value="4"/>
+    <property name="shadow_delta_width" type="int" value="4"/>
+    <property name="shadow_delta_x" type="int" value="-2"/>
+    <property name="shadow_delta_y" type="int" value="-2"/>
+    <property name="shadow_opacity" type="int" value="65"/>
     <property name="show_app_icon" type="bool" value="false"/>
     <property name="show_dock_shadow" type="bool" value="true"/>
     <property name="show_frame_shadow" type="bool" value="true"/>
@@ -58,11 +58,11 @@
     <property name="snap_to_border" type="bool" value="true"/>
     <property name="snap_to_windows" type="bool" value="false"/>
     <property name="snap_width" type="int" value="10"/>
-    <property name="vblank_mode" type="string" value="auto"/>
-    <property name="theme" type="string" value="Materia-light"/>
+    <property name="vblank_mode" type="string" value="off"/>
+    <property name="theme" type="string" value="BorealOS-Dark"/>
     <property name="tile_on_move" type="bool" value="true"/>
     <property name="title_alignment" type="string" value="center"/>
-    <property name="title_font" type="string" value="Sans Bold 9"/>
+    <property name="title_font" type="string" value="IBM Plex Sans Bold 9"/>
     <property name="title_horizontal_offset" type="int" value="0"/>
     <property name="titleless_maximize" type="bool" value="false"/>
     <property name="title_shadow_active" type="string" value="false"/>
@@ -72,7 +72,7 @@
     <property name="toggle_workspaces" type="bool" value="false"/>
     <property name="unredirect_overlays" type="bool" value="true"/>
     <property name="urgent_blink" type="bool" value="false"/>
-    <property name="use_compositing" type="bool" value="true"/>
+    <property name="use_compositing" type="bool" value="false"/>
     <property name="workspace_count" type="int" value="4"/>
     <property name="wrap_cycle" type="bool" value="true"/>
     <property name="wrap_layout" type="bool" value="true"/>

@@ -6,71 +6,61 @@
     <value type="int" value="1"/>
     <property name="dark-mode" type="bool" value="true"/>
     <property name="panel-1" type="empty">
-      <property name="position" type="string" value="p=9;x=634;y=14"/>
-      <property name="length" type="double" value="77.421875"/>
-      <property name="position-locked" type="bool" value="true"/>
-      <property name="icon-size" type="uint" value="18"/>
-      <property name="size" type="uint" value="30"/>
+      <!--
+        p=6 = top-center anchor. No absolute x/y pixel offsets (the old
+        config had x=634 baked in from one specific screen resolution and
+        position-locked=true, so on any other resolution the panel could
+        render off-screen). length-adjust=true makes "length" a PERCENTAGE
+        of the output width (0-100), not a pixel value - the old 62 here
+        meant "62% of screen width", which is exactly why the panel looked
+        too short/didn't reach the edges. 100 = full width.
+      -->
+      <property name="position" type="string" value="p=6;x=0;y=8"/>
+      <property name="length" type="double" value="100"/>
+      <property name="length-adjust" type="bool" value="true"/>
+      <property name="position-locked" type="bool" value="false"/>
+      <property name="icon-size" type="uint" value="24"/>
+      <property name="size" type="uint" value="48"/>
       <property name="plugin-ids" type="array">
-        <value type="int" value="12"/>
         <value type="int" value="1"/>
-        <value type="int" value="9"/>
         <value type="int" value="13"/>
         <value type="int" value="14"/>
         <value type="int" value="15"/>
+        <value type="int" value="9"/>
         <value type="int" value="2"/>
         <value type="int" value="3"/>
         <value type="int" value="6"/>
-        <value type="int" value="11"/>
-        <value type="int" value="10"/>
-        <value type="int" value="4"/>
         <value type="int" value="7"/>
-        <value type="int" value="8"/>
+        <value type="int" value="10"/>
+        <value type="int" value="11"/>
+        <value type="int" value="4"/>
         <value type="int" value="5"/>
+        <value type="int" value="8"/>
       </property>
-      <property name="autohide-behavior" type="uint" value="1"/>
+      <property name="autohide-behavior" type="uint" value="0"/>
+      <!-- background-style=1 (custom color) + low alpha for the glass look;
+           actual rounding of the panel window is done via gtk.css since
+           xfce4-panel has no native corner-radius property. -->
       <property name="background-style" type="uint" value="1"/>
       <property name="background-rgba" type="array">
-        <value type="double" value="0"/>
-        <value type="double" value="0"/>
-        <value type="double" value="0"/>
-        <value type="double" value="0.46959459459459457"/>
+        <value type="double" value="0.08"/>
+        <value type="double" value="0.09"/>
+        <value type="double" value="0.11"/>
+        <value type="double" value="0.55"/>
       </property>
     </property>
   </property>
   <property name="plugins" type="empty">
-    <property name="plugin-2" type="string" value="tasklist">
-      <property name="grouping" type="uint" value="1"/>
-      <property name="show-labels" type="bool" value="false"/>
-      <property name="flat-buttons" type="bool" value="true"/>
-      <property name="show-tooltips" type="bool" value="false"/>
-      <property name="show-handle" type="bool" value="false"/>
-    </property>
-    <property name="plugin-3" type="string" value="separator">
-      <property name="expand" type="bool" value="true"/>
-      <property name="style" type="uint" value="0"/>
-    </property>
-    <property name="plugin-6" type="string" value="systray">
-      <property name="square-icons" type="bool" value="true"/>
-      <property name="known-legacy-items" type="array">
-        <value type="string" value="ibus panel"/>
-      </property>
-      <property name="icon-size" type="int" value="0"/>
-      <property name="symbolic-icons" type="bool" value="true"/>
-      <property name="single-row" type="bool" value="true"/>
-      <property name="hide-new-items" type="bool" value="false"/>
-      <property name="hidden-legacy-items" type="array">
-      </property>
-    </property>
-    <property name="plugin-7" type="string" value="separator">
-      <property name="style" type="uint" value="0"/>
-    </property>
-    <property name="plugin-8" type="string" value="clock">
-      <property name="digital-layout" type="uint" value="3"/>
-      <property name="tooltip-format" type="string" value="%A %d %B %Y"/>
-      <property name="digital-date-font" type="string" value="Sans 8"/>
-      <property name="digital-time-format" type="string" value="%I:%M %p"/>
-      <property name="digital-time-font" type="string" value="Sans 10"/>
+    <property name="plugin-1" type="string" value="whiskermenu">
+      <property name="view-mode" type="int" value="0"/>
+      <property name="position-categories-horizontal" type="bool" value="false"/>
+      <property name="position-categories-alternate" type="bool" value="true"/>
+      <property name="menu-width" type="int" value="570"/>
+      <property name="launcher-show-name" type="bool" value="true"/>
+      <property name="recent-items-max" type="int" value="10"/>
+      <property name="menu-opacity" type="int" value="92"/>
+      <property name="button-icon" type="string" value="/usr/share/pixmaps/boreal-logo-ghost.png"/>
+      <property name="button-single-row" type="bool" value="true"/>
     </property>
     <property name="plugin-13" type="string" value="launcher">
       <property name="items" type="array">
@@ -87,26 +77,34 @@
         <value type="string" value="17819658633.desktop"/>
       </property>
     </property>
-    <property name="plugin-1" type="string" value="whiskermenu">
-      <property name="view-mode" type="int" value="0"/>
-      <property name="position-categories-horizontal" type="bool" value="false"/>
-      <property name="position-categories-alternate" type="bool" value="true"/>
-      <property name="menu-width" type="int" value="570"/>
-      <property name="launcher-show-name" type="bool" value="true"/>
-      <property name="recent-items-max" type="int" value="10"/>
-      <property name="recent" type="array">
-        <value type="string" value="xfce-settings-manager.desktop"/>
-        <value type="string" value="lightdm-gtk-greeter-settings.desktop"/>
-        <value type="string" value="galculator.desktop"/>
-        <value type="string" value="xfce4-terminal-emulator.desktop"/>
-        <value type="string" value="org.xfce.mousepad.desktop"/>
-        <value type="string" value="xfce-ui-settings.desktop"/>
-        <value type="string" value="org.gnome.Calculator.desktop"/>
-        <value type="string" value="xfce-wmtweaks-settings.desktop"/>
-      </property>
-      <property name="menu-opacity" type="int" value="80"/>
-    </property>
     <property name="plugin-9" type="string" value="separator">
+      <property name="expand" type="bool" value="false"/>
+      <property name="style" type="uint" value="0"/>
+    </property>
+    <property name="plugin-2" type="string" value="tasklist">
+      <property name="grouping" type="uint" value="1"/>
+      <property name="show-labels" type="bool" value="false"/>
+      <property name="flat-buttons" type="bool" value="true"/>
+      <property name="show-tooltips" type="bool" value="true"/>
+      <property name="show-handle" type="bool" value="false"/>
+    </property>
+    <property name="plugin-3" type="string" value="separator">
+      <property name="expand" type="bool" value="true"/>
+      <property name="style" type="uint" value="0"/>
+    </property>
+    <property name="plugin-6" type="string" value="systray">
+      <property name="square-icons" type="bool" value="true"/>
+      <property name="known-legacy-items" type="array">
+        <value type="string" value="ibus panel"/>
+      </property>
+      <property name="icon-size" type="int" value="20"/>
+      <property name="symbolic-icons" type="bool" value="true"/>
+      <property name="single-row" type="bool" value="true"/>
+      <property name="hide-new-items" type="bool" value="false"/>
+      <property name="hidden-legacy-items" type="array">
+      </property>
+    </property>
+    <property name="plugin-7" type="string" value="separator">
       <property name="style" type="uint" value="0"/>
     </property>
     <property name="plugin-10" type="string" value="power-manager-plugin"/>
@@ -117,8 +115,12 @@
     <property name="plugin-5" type="string" value="separator">
       <property name="style" type="uint" value="0"/>
     </property>
-    <property name="plugin-12" type="string" value="separator">
-      <property name="style" type="uint" value="0"/>
+    <property name="plugin-8" type="string" value="clock">
+      <property name="digital-layout" type="uint" value="3"/>
+      <property name="tooltip-format" type="string" value="%A %d %B %Y"/>
+      <property name="digital-date-font" type="string" value="IBM Plex Sans 8"/>
+      <property name="digital-time-format" type="string" value="%I:%M %p"/>
+      <property name="digital-time-font" type="string" value="IBM Plex Sans Bold 10"/>
     </property>
   </property>
 </channel>

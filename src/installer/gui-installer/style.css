@@ -1,3 +1,7 @@
+* {
+    font-family: "IBM Plex Sans", sans-serif;
+}
+
 #boreal-window {
     background-image: url("/usr/share/boreal-artwork/wallpaper-alt.png");
     background-size: cover;

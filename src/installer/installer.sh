@@ -221,9 +221,72 @@ configure_network() {
 
 partition_disk() {
     step "Partitioning $DISK..."
+
+    # Leftover state from a PREVIOUS install attempt on this exact disk is
+    # the actual cause of both failures in the logs: "partition(s) ... been
+    # written, but we have been unable to inform the kernel" on mklabel,
+    # and "/dev/sda3 is apparently in use by the system" on mkfs.ext4.
+    # This installer always uses the same fixed names (VG "borealvg", LUKS
+    # mapping "borealcrypt"), so a prior run that got as far as vgcreate/
+    # luksOpen leaves the kernel holding a live reference into this disk's
+    # partitions - LVM's own udev/autoactivation rules on the live medium
+    # can reattach that VG again on every subsequent boot purely from
+    # on-disk signatures, well before this script ever runs, which is why
+    # even a completely fresh boot's FIRST parted call already failed.
+    # Previously this cleanup only ran in the EXIT trap (i.e. only after
+    # THIS run finished/failed) - never before a run starts, and never a
+    # full signature wipe. Doing it here, unconditionally, before mklabel,
+    # closes that gap instead of relying on the user to reboot enough
+    # times for it to eventually work.
+    step "Clearing any leftover state on $DISK from a previous attempt..."
+    for mnt in $(awk -v d="$DISK" '$1 ~ "^"d {print $2}' /proc/mounts | sort -r); do
+        umount -l "$mnt" 2>/dev/null || true
+    done
+    for sw in $(awk -v d="$DISK" '$1 ~ "^"d {print $1}' /proc/swaps 2>/dev/null); do
+        swapoff "$sw" 2>/dev/null || true
+    done
+    vgchange -an borealvg 2>/dev/null || true
+    vgremove -f borealvg 2>/dev/null || true
+    for pv in $(pvs --noheadings -o pv_name 2>/dev/null | tr -d ' '); do
+        case "$pv" in "$DISK"*) pvremove -ff -y "$pv" 2>/dev/null || true ;; esac
+    done
+    cryptsetup luksClose borealcrypt 2>/dev/null || true
+    # Any other dm mapping still pointing at a partition of this disk
+    # (e.g. from a crash mid-install rather than a clean prior run) -
+    # dmsetup deps tells us what a mapping is built on, so this only
+    # tears down mappings that actually sit on THIS disk, not unrelated
+    # ones (like the live ISO's own overlay).
+    for dm in $(dmsetup ls --target linear 2>/dev/null | awk '{print $1}'); do
+        dmsetup deps -o devname "$dm" 2>/dev/null | grep -q "$(basename "$DISK")" \
+            && dmsetup remove -f "$dm" 2>/dev/null || true
+    done
+    # Strip residual LVM/LUKS/filesystem signatures the kernel/udev can
+    # otherwise still see even after parted writes a fresh partition
+    # table - this is the actual fix for "unable to inform the kernel" /
+    # "apparently in use", both of which are the kernel getting confused
+    # by old magic bytes it can still find, not a real busy-device error.
+    wipefs -af "$DISK" 2>/dev/null || true
+    for p in "${DISK}"*[0-9]*; do
+        [ -b "$p" ] && wipefs -af "$p" 2>/dev/null || true
+    done
+    partprobe "$DISK" 2>/dev/null
+    udevadm settle 2>/dev/null || sleep 2
+
     EFI_END=$((2 + EFI_SIZE))
     SWAP_END=$((EFI_END + SWAP_SIZE))
-    parted -s "$DISK" mklabel gpt                                || die "mklabel failed"
+    # mklabel/mkpart retried with a re-probe in between: the "unable to
+    # inform the kernel of the change" parted warning is a udev/kernel
+    # synchronization race, not necessarily a hard failure - retrying
+    # after explicitly asking the kernel to re-read the table (rather
+    # than a single blind attempt) resolves it far more often than not.
+    attempt=1
+    until parted -s "$DISK" mklabel gpt 2>&1; do
+        [ "$attempt" -ge 3 ] && die "mklabel failed after $attempt attempts"
+        warn "mklabel failed (attempt $attempt) - re-reading partition table and retrying..."
+        partprobe "$DISK" 2>/dev/null
+        udevadm settle 2>/dev/null || sleep 2
+        attempt=$((attempt + 1))
+    done
     parted -s "$DISK" mkpart bios_boot 1MiB 2MiB                || die "BIOS boot partition failed"
     parted -s "$DISK" set 1 bios_grub on                        || die "bios_grub flag failed"
     parted -s "$DISK" mkpart ESP fat32 2MiB "${EFI_END}MiB"     || die "EFI partition failed"
@@ -235,7 +298,8 @@ partition_disk() {
     fi
     ROOT_START=$([ "$SWAP_SIZE" -gt 0 ] && echo "${SWAP_END}MiB" || echo "${EFI_END}MiB")
     parted -s "$DISK" mkpart primary ext4 "$ROOT_START" 100%    || die "root partition failed"
-    partprobe "$DISK" 2>/dev/null; sleep 2
+    partprobe "$DISK" 2>/dev/null
+    udevadm settle 2>/dev/null || sleep 2
     if [[ "$DISK" == *nvme* ]]; then
         SEP="p"
     else
@@ -244,6 +308,16 @@ partition_disk() {
     BIOS="${DISK}${SEP}1"; EFI="${DISK}${SEP}2"
     if [ "$SWAP_SIZE" -gt 0 ]; then SWAP="${DISK}${SEP}3"; else SWAP=""; fi
     ROOT="${DISK}${SEP}${NEXT_PART}"
+    # Wait for the device nodes to actually show up rather than a single
+    # blind check - udev creating them can lag slightly behind partprobe
+    # returning, especially right after the wipefs/mklabel churn above.
+    for dev in "$BIOS" "$EFI" "$ROOT"; do
+        i=0
+        while [ ! -b "$dev" ] && [ "$i" -lt 10 ]; do
+            sleep 1
+            i=$((i + 1))
+        done
+    done
     [ -b "$BIOS" ] || die "BIOS partition $BIOS not found"
     [ -b "$EFI"  ] || die "EFI partition $EFI not found"
     [ -b "$ROOT" ] || die "Root partition $ROOT not found"
@@ -316,18 +390,25 @@ rsync_system() {
 }
 
 install_bundled_packages() {
-    step "Installing display manager into target system..."
+    step "Verifying display manager on target..."
     bind_mounts
-    cp /etc/resolv.conf /mnt/etc/resolv.conf 2>/dev/null || true
 
-    # Install the DM directly into the target via apt — no pre-cached debs needed.
-    # lightdm is the default; sddm for KDE (set by $DM_PKGS).
-    local dm_to_install="${DM_PKGS:-lightdm lightdm-gtk-greeter}"
-    chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
-        $dm_to_install 2>/dev/null || warn "DM install failed - target may boot to TTY"
+    # DM_PKGS is already installed at ISO-build time (build-iso.sh, right
+    # alongside DE_PKGS) and rides onto the target via the rsync copy in
+    # copy_system - no separate install needed, and this installer is
+    # offline by design, so it never touches the network here. Just verify
+    # what should already be there actually is.
+    local dm_to_check="${DM_PKGS:-lightdm lightdm-gtk-greeter}"
+    local missing=""
+    for pkg in $dm_to_check; do
+        chroot /mnt dpkg -s "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
+    done
+    if [ -n "$missing" ]; then
+        warn "DM package(s) missing on target:$missing - they should have been baked into the ISO by build-iso.sh. Target may boot to TTY."
+    fi
 
-    # Install any other cached debs (bundled drivers, etc.)
+    # Install any other cached debs (bundled drivers, etc.) - purely local
+    # files, dpkg -i, no network involved.
     local deb_count
     deb_count=$(ls /opt/borealOS/debs/*.deb 2>/dev/null | wc -l)
     if [ "$deb_count" -gt 0 ]; then
@@ -455,24 +536,28 @@ locale-gen
 echo "LANG=${LOCALE}" > /etc/locale.conf
 cat > /etc/os-release <<OS
 NAME="BorealOS"
-PRETTY_NAME="BorealOS alpha"
+PRETTY_NAME="BorealOS 0.0.2"
 ID=borealos
 ID_LIKE=
-VERSION="alpha"
-VERSION_ID="alpha"
+VERSION="0.0.2"
+VERSION_ID="0.0.2"
 HOME_URL="https://borealos.org"
 OS
 cat > /etc/lsb-release <<LSB
 DISTRIB_ID=BorealOS
-DISTRIB_RELEASE=alpha
+DISTRIB_RELEASE=0.0.2
 DISTRIB_CODENAME=boreal
-DISTRIB_DESCRIPTION="BorealOS alpha"
+DISTRIB_DESCRIPTION="BorealOS 0.0.2"
 LSB
 echo "BorealOS"     > /etc/issue
-echo "BorealOS alpha" > /etc/issue.net
+echo "BorealOS 0.0.2" > /etc/issue.net
 echo "BorealOS"     > /etc/debian_version
 
-apt-get install -y --no-install-recommends chrony || warn "chrony install failed"
+# chrony is already installed at ISO-build time (build-iso.sh) and rsynced
+# over with everything else - this installer is offline by design, so it
+# only verifies it's there rather than trying to (re-)install it, which
+# would need network access it isn't supposed to depend on.
+command -v chronyd >/dev/null 2>&1 || command -v chrony >/dev/null 2>&1 || warn "chrony missing - it should have been baked into the ISO by build-iso.sh"
 cat > /etc/adjtime <<'ADJTIME'
 0.0 0 0.0
 0
@@ -489,8 +574,11 @@ fi
 rc-update add chronyd default 2>/dev/null || rc-update add chrony default 2>/dev/null || true
 rc-update add hwclock boot 2>/dev/null || true
 
-apt-get install -y --no-install-recommends elogind libpam-elogind polkitd pkexec \
-    || warn "elogind/policykit install failed - shutdown/restart will stay greyed out"
+# Same story as chrony above - elogind/polkitd/pkexec are already baked
+# into the ISO by build-iso.sh, so just verify rather than reach for the
+# network.
+command -v elogind >/dev/null 2>&1 || warn "elogind missing - it should have been baked into the ISO by build-iso.sh - shutdown/restart will stay greyed out"
+command -v pkexec >/dev/null 2>&1 || warn "pkexec missing - it should have been baked into the ISO by build-iso.sh - shutdown/restart will stay greyed out"
 pam-auth-update --enable elogind 2>/dev/null || true
 rc-update add elogind boot 2>/dev/null || rc-update add elogind default 2>/dev/null || true
 rc-update add dbus boot 2>/dev/null || rc-update add dbus default 2>/dev/null || true
@@ -535,7 +623,14 @@ PYDEFAULTS
 
     step "Installing artwork..."
     mkdir -p /mnt/usr/share/boreal-artwork
-    cp /opt/borealOS/background_2.png   /mnt/usr/share/boreal-artwork/wallpaper-default.png
+    # /opt/borealOS/default-wallpaper.png is the already-scaled, correct
+    # default wallpaper (see build-iso.sh's comment where it's staged
+    # there). This used to copy from background_2.png - a completely
+    # different, unrelated wallpaper - which is the actual reason the
+    # desktop wallpaper never reflected any fix to the wallpaper-setting
+    # logic further down this file: this repair step ran afterward and
+    # overwrote the correct file with the wrong one every single install.
+    cp /opt/borealOS/default-wallpaper.png /mnt/usr/share/boreal-artwork/wallpaper-default.png
     cp /opt/borealOS/background_one.png /mnt/usr/share/boreal-artwork/wallpaper-waves.png
     cp /opt/borealOS/logo.png           /mnt/usr/share/boreal-artwork/logo.png
 
@@ -592,15 +687,16 @@ remove_live_boot() {
     rm -rf /mnt/opt/borealOS/gui-debs 2>/dev/null || true
     rm -rf /mnt/opt/borealOS/debs 2>/dev/null || true
 
-    step "Purging plymouth from target (broken hook causes initramfs failure)..."
-    # Plymouth's initramfs hook references /usr/share/plymouth/debian-logo.png
-    # which doesn't exist in the target, causing update-initramfs to fail.
-    # Purge it completely before rebuilding — we don't use plymouth anyway.
-    chroot /mnt dpkg -r --force-depends         plymouth plymouth-themes libplymouth5         plymouth-label plymouth-theme-debian-logo         plymouth-theme-debian-spinner         2>/dev/null || true
-    # Belt-and-suspenders: delete the hook files directly
-    rm -f /mnt/usr/share/initramfs-tools/hooks/plymouth           /mnt/usr/share/initramfs-tools/scripts/init-top/plymouth           /mnt/usr/share/initramfs-tools/scripts/init-bottom/plymouth           /mnt/etc/initramfs-tools/conf.d/plymouth           /mnt/usr/share/plymouth/debian-logo.png 2>/dev/null || true
-    find /mnt/etc/initramfs-tools -name "*plymouth*" -delete 2>/dev/null || true
-    ok "Plymouth purged."
+    # Plymouth is now properly uninstalled via dpkg at ISO build time (see
+    # build-iso.sh), instead of just having its files deleted - which used
+    # to leave dpkg's database inconsistent (package still "installed" with
+    # missing files) and break update-initramfs on every install. That's
+    # fixed at the source now, so it shouldn't be present here at all. This
+    # is just a cheap sanity check, not a routine cleanup step.
+    if chroot /mnt dpkg -l plymouth 2>/dev/null | grep -q "^ii"; then
+        warn "plymouth is still installed on target - it should have been removed at ISO build time. Removing it now as a fallback."
+        chroot /mnt dpkg -r --force-depends plymouth plymouth-themes libplymouth5 plymouth-label plymouth-theme-debian-logo plymouth-theme-debian-spinner 2>/dev/null || true
+    fi
 
     step "Rebuilding initramfs..."
     chroot /mnt update-initramfs -u -k all 2>&1 || die "update-initramfs failed"
@@ -659,11 +755,43 @@ SDDM
             ln -sf /etc/init.d/lightdm /mnt/etc/runlevels/default/lightdm 2>/dev/null || true
             ln -sf ../init.d/lightdm /mnt/etc/rc2.d/S03lightdm 2>/dev/null || true
 
+            # This installer is offline by design - there is no package
+            # mirror available at install time, so there is no way to
+            # "fix" a missing desktop environment here. XFCE is supposed
+            # to already be present (rsynced over from the live squashfs -
+            # see build-iso.sh, which now hard-fails at ISO build time if
+            # startxfce4/xfwm4/xfce4-panel aren't present, specifically so
+            # this situation can't happen with a correctly built ISO).
+            # If this check ever fires, the ISO itself was built wrong or
+            # is stale - failing clearly here beats a silent broken desktop
+            # or a self-heal that requires network and will never work.
+            if ! chroot /mnt sh -c "command -v startxfce4" >/dev/null 2>&1; then
+                die "startxfce4 is missing on target - XFCE was not present in the live image this ISO was built from. This installer is offline and cannot fix that here. Rebuild the ISO with build-iso.sh (it now refuses to complete if XFCE isn't actually present), then try installing again with a fresh ISO."
+            fi
+            ok "XFCE present on target."
+
             step "Installing XFCE theming and panel plugins..."
-            chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                fonts-ibm-plex papirus-icon-theme materia-gtk-theme gtk2-engines-murrine adwaita-icon-theme \
-                xfce4-whiskermenu-plugin xfce4-pulseaudio-plugin xfce4-power-manager xfce4-power-manager-plugins pavucontrol \
-                2>/dev/null || warn "Theming package install failed - falling back to whatever GTK theme is already installed"
+            # fonts-ibm-plex/papirus-icon-theme/adwaita-icon-theme/panel
+            # plugins are already installed at ISO build time (DE_EXTRA_PKGS
+            # in build-iso.sh) and ride along here via the rsync from the
+            # live squashfs - no need to reinstall them, and this installer
+            # is offline so an apt-get call here couldn't work anyway.
+            if chroot /mnt sh -c "command -v xfce4-panel" >/dev/null 2>&1 && chroot /mnt dpkg -l fonts-ibm-plex 2>/dev/null | grep -q "^ii"; then
+                ok "Theming packages present on target."
+            else
+                warn "Some theming packages may be missing from the live image - desktop will still work but fonts/icons may fall back to system defaults. Rebuild the ISO if this is unexpected."
+            fi
+
+            step "Installing BorealOS-Dark theme..."
+            if [ -d /usr/share/themes/BorealOS-Dark ] && [ ! -d /mnt/usr/share/themes/BorealOS-Dark ]; then
+                mkdir -p /mnt/usr/share/themes
+                cp -r /usr/share/themes/BorealOS-Dark /mnt/usr/share/themes/BorealOS-Dark
+            fi
+            if [ -d /mnt/usr/share/themes/BorealOS-Dark ]; then
+                ok "BorealOS-Dark theme present on target."
+            else
+                warn "BorealOS-Dark theme not found anywhere - xfwm4/xsettings will fall back to the system default theme at runtime."
+            fi
 
             mkdir -p /mnt/etc/lightdm
             if ls /opt/borealOS/lightdm/* >/dev/null 2>&1; then
@@ -673,9 +801,11 @@ SDDM
                 cat > /mnt/etc/lightdm/lightdm-gtk-greeter.conf <<LDM
 [greeter]
 background=/usr/share/boreal-artwork/wallpaper-default.png
-theme-name=Materia-light
-icon-theme-name=Papirus
+theme-name=BorealOS-Dark
+icon-theme-name=Papirus-Dark
+cursor-theme-name=Adwaita
 font-name=IBM Plex Sans 10
+hide-user-image=true
 LDM
             fi
             mkdir -p /mnt/etc/lightdm/lightdm.conf.d
@@ -685,6 +815,7 @@ logind-check-graphical=true
 
 [Seat:*]
 greeter-session=lightdm-gtk-greeter
+display-setup-script=/usr/local/bin/boreal-greeter-compositor
 LIGHTDMCONF
 
             step "Fixing default wallpaper..."
@@ -693,72 +824,41 @@ LIGHTDMCONF
                  -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) \
                  -exec cp /mnt/usr/share/boreal-artwork/wallpaper-default.png {} \; 2>/dev/null || true
 
-            step "Applying theme (native xfconf/panel API, applied at each login)..."
-            cat > /mnt/usr/local/bin/boreal-apply-theme.sh <<'THEMESCRIPT'
-#!/bin/sh
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    command -v xfconf-query >/dev/null 2>&1 && xfconf-query -c xfwm4 -p /general -l >/dev/null 2>&1 && break
-    sleep 1
-done
-
-set_prop() {
-    xfconf-query -c "$1" -p "$2" -n -t "$3" -s "$4" 2>/dev/null \
-        || xfconf-query -c "$1" -p "$2" -t "$3" -s "$4" 2>/dev/null
-}
-
-set_prop xsettings /Net/ThemeName string Materia-light
-set_prop xsettings /Net/IconThemeName string Papirus
-set_prop xsettings /Net/DoubleClickTime int 400
-set_prop xsettings /Gtk/CursorThemeName string Adwaita
-set_prop xsettings /Gtk/FontName string "IBM Plex Sans 10"
-set_prop xsettings /Gtk/MonospaceFontName string "IBM Plex Mono 10"
-
-set_prop xfwm4 /general/theme string Materia-light
-set_prop xfwm4 /general/title_font string "IBM Plex Sans Bold 10"
-set_prop xfwm4 /general/double_click_action string maximize
-set_prop xfwm4 /general/click_to_focus bool true
-
-set_prop xfce4-session /general/SaveOnExit bool false
-set_prop xfce4-session /general/LockScreen string xflock4
-set_prop xfce4-session /shutdown/ShowOnLogout bool true
-
-EXISTING_TYPES=$(for id in $(xfconf-query -c xfce4-panel -p /plugins -l 2>/dev/null | grep -oE 'plugin-[0-9]+'); do
-    xfconf-query -c xfce4-panel -p "/plugins/$id" 2>/dev/null
-done)
-echo "$EXISTING_TYPES" | grep -qE '^(whiskermenu|applicationsmenu)$' || xfce4-panel --add=whiskermenu 2>/dev/null
-echo "$EXISTING_TYPES" | grep -q '^pulseaudio$'                     || xfce4-panel --add=pulseaudio 2>/dev/null
-echo "$EXISTING_TYPES" | grep -q '^power-manager-plugin$'           || xfce4-panel --add=power-manager-plugin 2>/dev/null
-
-IDS=$(xfconf-query -c xfce4-panel -p /plugins -l 2>/dev/null | grep -oE 'plugin-[0-9]+' | sort -u)
-for id in $IDS; do
-    val=$(xfconf-query -c xfce4-panel -p "/plugins/$id" 2>/dev/null)
-    if [ "$val" = "applicationsmenu" ] || [ "$val" = "whiskermenu" ]; then
-        set_prop xfce4-panel "/plugins/${id}/button-icon" string /usr/share/pixmaps/boreal-logo-ghost.png
-    fi
-done
-THEMESCRIPT
-            chmod 755 /mnt/usr/local/bin/boreal-apply-theme.sh
-
-            mkdir -p /mnt/etc/skel/.config/autostart
-            cat > /mnt/etc/skel/.config/autostart/boreal-apply-theme.desktop <<THEMEAUTOSTART
-[Desktop Entry]
-Type=Application
-Name=BorealOS Theme
-Exec=/usr/local/bin/boreal-apply-theme.sh
-Hidden=false
-NoDisplay=true
-X-GNOME-Autostart-enabled=true
-StartupNotify=false
-THEMEAUTOSTART
+            step "Verifying theme script and autostart came over from the live image..."
+            # boreal-apply-theme.sh and its autostart .desktop entry are
+            # NOT written here anymore - they used to be, as a heredoc
+            # embedded directly in this script, kept manually in sync with
+            # the actual live-squashfs copy build-iso.sh produces. That's
+            # exactly the kind of duplication that's easy to forget to
+            # update (it happened - a THIRD copy, hardcoded in the GUI
+            # installer's C source, went stale for turns without anyone
+            # noticing, silently overwriting the correct rsynced file on
+            # every GUI install). rsync_system already copies the entire
+            # live filesystem, including these two files at their real
+            # paths - so they're already correct here, and this just
+            # verifies that rather than re-writing a second copy that
+            # could drift from the first again.
+            [ -x /mnt/usr/local/bin/boreal-apply-theme.sh ] || \
+                warn "boreal-apply-theme.sh missing/not executable on target after rsync - theme won't self-apply at login"
+            [ -f /mnt/etc/skel/.config/autostart/boreal-apply-theme.desktop ] || \
+                warn "boreal-apply-theme.desktop missing from target skel after rsync"
 
             mkdir -p /mnt/root/.config/autostart
             cp /mnt/etc/skel/.config/autostart/boreal-apply-theme.desktop /mnt/root/.config/autostart/
+            # xcompmgr for the XFCE session itself - xfwm4's own built-in
+            # compositor is a different, unconfirmed code path from the
+            # xcompmgr already proven working for lightdm's greeter, so
+            # the session gets that same proven setup instead.
+            [ -f /mnt/etc/skel/.config/autostart/boreal-compositor.desktop ] && \
+                cp /mnt/etc/skel/.config/autostart/boreal-compositor.desktop /mnt/root/.config/autostart/
             chroot /mnt chown -R root:root /root/.config 2>/dev/null || true
             for u in "${EXTRA_USERS[@]}"; do
                 local uname="${u%%|*}"
                 [ -d "/mnt/home/${uname}" ] || continue
                 mkdir -p "/mnt/home/${uname}/.config/autostart"
                 cp /mnt/etc/skel/.config/autostart/boreal-apply-theme.desktop "/mnt/home/${uname}/.config/autostart/"
+                [ -f /mnt/etc/skel/.config/autostart/boreal-compositor.desktop ] && \
+                    cp /mnt/etc/skel/.config/autostart/boreal-compositor.desktop "/mnt/home/${uname}/.config/autostart/"
                 chroot /mnt chown -R "${uname}:${uname}" "/home/${uname}/.config" 2>/dev/null || true
             done
             ;;
@@ -843,7 +943,7 @@ GRUB_DISTRIBUTOR=BorealOS
 GRUB_CMDLINE_LINUX_DEFAULT="quiet"
 GRUB_CMDLINE_LINUX=""
 GRUB_DISABLE_OS_PROBER=true
-GRUB_GFXMODE=auto
+GRUB_GFXMODE=1024x768,auto
 GRUBDEF
     if [ "$USE_LUKS" = "y" ]; then
         echo "GRUB_ENABLE_CRYPTODISK=y" >> /mnt/etc/default/grub
@@ -895,25 +995,30 @@ EGCFG
 insmod all_video
 insmod gfxterm
 insmod png
-set gfxmode=auto
+insmod font
+set gfxmode=1024x768,auto
 terminal_output gfxterm
 
 set default=0
 set timeout=5
 
 if [ -f /boot/grub/themes/boreal/theme.txt ]; then
+    if loadfont /boot/grub/themes/boreal/plex_regular_16.pf2; then
+        loadfont /boot/grub/themes/boreal/plex_bold_16.pf2
+        loadfont /boot/grub/themes/boreal/plex_regular_13.pf2
+    fi
     set theme=/boot/grub/themes/boreal/theme.txt
 else
     set menu_color_normal=cyan/black
     set menu_color_highlight=black/cyan
 fi
 
-menuentry "BorealOS alpha" {
+menuentry "BorealOS 0.0.2" {
     ${UNLOCK}search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
     linux /boot/vmlinuz-${KVER} root=UUID=${ROOT_UUID} ro quiet
     initrd /boot/initrd.img-${KVER}
 }
-menuentry "BorealOS alpha (recovery)" {
+menuentry "BorealOS 0.0.2 (recovery)" {
     ${UNLOCK}search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
     linux /boot/vmlinuz-${KVER} root=UUID=${ROOT_UUID} ro single
     initrd /boot/initrd.img-${KVER}

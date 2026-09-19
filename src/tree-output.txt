@@ -1,0 +1,446 @@
+.
+├── borealOS-rootfs.tar.gz
+├── dynamic-bar
+│   ├── CMakeLists.txt
+│   ├── qml
+│   │   └── main.qml
+│   └── src
+│       ├── Main.cpp
+│       └── systemstatus.h
+├── installer
+│   ├── background_2.png
+│   ├── background_grub.png
+│   ├── background_main.png
+│   ├── background_one.png
+│   ├── borealos-ghost-logo.png
+│   ├── borealOS.iso
+│   ├── borealOS-rootfs.tar.gz
+│   ├── borealOS-text-and-logo-transparent.png
+│   ├── build-iso-arch.sh
+│   ├── build-iso.sh
+│   ├── gui-installer
+│   │   ├── boreal-installer.c
+│   │   ├── Makefile
+│   │   └── style.css
+│   ├── installer.sh
+│   ├── iso-work
+│   │   ├── iso
+│   │   │   ├── boot
+│   │   │   │   └── grub
+│   │   │   └── live
+│   │   └── squashfs-root
+│   │       ├── boot
+│   │       ├── dev  [error opening dir]
+│   │       ├── etc  [error opening dir]
+│   │       ├── media
+│   │       ├── mnt
+│   │       ├── proc
+│   │       ├── root  [error opening dir]
+│   │       ├── sys
+│   │       └── usr  [error opening dir]
+│   └── logo.png
+├── rice
+│   ├── default-wallpaper.jpg
+│   ├── fastfetch
+│   │   └── config.jsonc
+│   ├── grub
+│   │   ├── grub-theme.txt
+│   │   └── select_c.png
+│   ├── kde
+│   │   └── config
+│   │       ├── kactivitymanagerdrc
+│   │       ├── kactivitymanagerd-statsrc
+│   │       ├── kcharselectrc
+│   │       ├── kcminputrc
+│   │       ├── kconf_updaterc
+│   │       ├── kdeconnect
+│   │       │   ├── 87b0191f85f34fb591619800df6e4af7
+│   │       │   │   ├── config
+│   │       │   │   └── kdeconnect_runcommand
+│   │       │   │       └── config
+│   │       │   ├── certificate.pem
+│   │       │   ├── config
+│   │       │   ├── privateKey.pem
+│   │       │   └── trusted_devices
+│   │       ├── kded5rc
+│   │       ├── kdedefaults
+│   │       │   ├── kcminputrc
+│   │       │   ├── kdeglobals
+│   │       │   ├── ksplashrc
+│   │       │   ├── kwinrc
+│   │       │   ├── package
+│   │       │   └── plasmarc
+│   │       ├── kdeglobals
+│   │       ├── kglobalshortcutsrc
+│   │       ├── klassy
+│   │       │   ├── klassyrc
+│   │       │   └── windecopresetsrc
+│   │       ├── konsolerc
+│   │       ├── konsolesshconfig
+│   │       ├── kscreenlockerrc
+│   │       ├── ktimezonedrc
+│   │       ├── kwalletrc
+│   │       ├── kwinoutputconfig.json
+│   │       ├── kwinrc
+│   │       ├── kwinrulesrc
+│   │       ├── plasma-localerc
+│   │       ├── plasmanotifyrc
+│   │       ├── plasma-org.kde.plasma.desktop-appletsrc
+│   │       ├── plasmarc
+│   │       ├── plasmashellrc
+│   │       └── plasma-welcomerc
+│   ├── kitty
+│   │   ├── dark.conf
+│   │   ├── kitty.conf
+│   │   └── light.conf
+│   ├── lightdm
+│   │   ├── lightdm.conf.d
+│   │   │   └── 01_debian.conf
+│   │   └── lightdm-gtk-greeter.conf.d
+│   │       └── 01_debian.conf
+│   ├── niri
+│   │   ├── config.kdl
+│   │   └── nohup.out
+│   ├── rice.7z
+│   ├── sway
+│   │   └── config
+│   ├── theme
+│   │   └── BorealOS-Dark
+│   │       ├── AUTHORS
+│   │       ├── COPYING
+│   │       ├── gtk-2.0
+│   │       │   ├── apps.rc
+│   │       │   ├── assets
+│   │       │   │   ├── border.png
+│   │       │   │   ├── button-active.png
+│   │       │   │   ├── button-hover.png
+│   │       │   │   ├── button-insensitive.png
+│   │       │   │   ├── button.png
+│   │       │   │   ├── checkbox-checked-active.png
+│   │       │   │   ├── checkbox-checked-hover.png
+│   │       │   │   ├── checkbox-checked-insensitive.png
+│   │       │   │   ├── checkbox-checked.png
+│   │       │   │   ├── checkbox-mixed-active.png
+│   │       │   │   ├── checkbox-mixed-hover.png
+│   │       │   │   ├── checkbox-mixed-insensitive.png
+│   │       │   │   ├── checkbox-mixed.png
+│   │       │   │   ├── checkbox-unchecked-active.png
+│   │       │   │   ├── checkbox-unchecked-hover.png
+│   │       │   │   ├── checkbox-unchecked-insensitive.png
+│   │       │   │   ├── checkbox-unchecked.png
+│   │       │   │   ├── combo-ltr-button-active.png
+│   │       │   │   ├── combo-ltr-button-hover.png
+│   │       │   │   ├── combo-ltr-button-insensitive.png
+│   │       │   │   ├── combo-ltr-button.png
+│   │       │   │   ├── combo-ltr-entry-active.png
+│   │       │   │   ├── combo-ltr-entry-insensitive.png
+│   │       │   │   ├── combo-ltr-entry.png
+│   │       │   │   ├── combo-rtl-button-active.png
+│   │       │   │   ├── combo-rtl-button-hover.png
+│   │       │   │   ├── combo-rtl-button-insensitive.png
+│   │       │   │   ├── combo-rtl-button.png
+│   │       │   │   ├── combo-rtl-entry-active.png
+│   │       │   │   ├── combo-rtl-entry-insensitive.png
+│   │       │   │   ├── combo-rtl-entry.png
+│   │       │   │   ├── entry-active.png
+│   │       │   │   ├── entry-background-insensitive.png
+│   │       │   │   ├── entry-background.png
+│   │       │   │   ├── entry-insensitive.png
+│   │       │   │   ├── entry.png
+│   │       │   │   ├── flat-button-active.png
+│   │       │   │   ├── flat-button-hover.png
+│   │       │   │   ├── flat-button-insensitive.png
+│   │       │   │   ├── flat-button.png
+│   │       │   │   ├── focus.png
+│   │       │   │   ├── frame-inline.png
+│   │       │   │   ├── frame-notebook.png
+│   │       │   │   ├── frame.png
+│   │       │   │   ├── handle-horz-active.png
+│   │       │   │   ├── handle-horz-hover.png
+│   │       │   │   ├── handle-horz.png
+│   │       │   │   ├── handle-vert-active.png
+│   │       │   │   ├── handle-vert-hover.png
+│   │       │   │   ├── handle-vert.png
+│   │       │   │   ├── menu-checkbox-checked-insensitive.png
+│   │       │   │   ├── menu-checkbox-checked.png
+│   │       │   │   ├── menu-checkbox-mixed-insensitive.png
+│   │       │   │   ├── menu-checkbox-mixed.png
+│   │       │   │   ├── menu-checkbox-unchecked-insensitive.png
+│   │       │   │   ├── menu-checkbox-unchecked.png
+│   │       │   │   ├── menu-radio-checked-insensitive.png
+│   │       │   │   ├── menu-radio-checked.png
+│   │       │   │   ├── menu-radio-mixed-insensitive.png
+│   │       │   │   ├── menu-radio-mixed.png
+│   │       │   │   ├── menu-radio-unchecked-insensitive.png
+│   │       │   │   ├── menu-radio-unchecked.png
+│   │       │   │   ├── notebook-combo-ltr-entry-active.png
+│   │       │   │   ├── notebook-combo-ltr-entry-insensitive.png
+│   │       │   │   ├── notebook-combo-ltr-entry.png
+│   │       │   │   ├── notebook-combo-rtl-entry-active.png
+│   │       │   │   ├── notebook-combo-rtl-entry-insensitive.png
+│   │       │   │   ├── notebook-combo-rtl-entry.png
+│   │       │   │   ├── notebook-entry-active.png
+│   │       │   │   ├── notebook-entry-insensitive.png
+│   │       │   │   ├── notebook-entry.png
+│   │       │   │   ├── pan-down-alt-insensitive.png
+│   │       │   │   ├── pan-down-alt.png
+│   │       │   │   ├── pan-down-insensitive.png
+│   │       │   │   ├── pan-down.png
+│   │       │   │   ├── pan-left-alt-insensitive.png
+│   │       │   │   ├── pan-left-alt.png
+│   │       │   │   ├── pan-left-insensitive.png
+│   │       │   │   ├── pan-left.png
+│   │       │   │   ├── pan-left-semi.png
+│   │       │   │   ├── pan-right-alt-insensitive.png
+│   │       │   │   ├── pan-right-alt.png
+│   │       │   │   ├── pan-right-insensitive.png
+│   │       │   │   ├── pan-right.png
+│   │       │   │   ├── pan-right-semi.png
+│   │       │   │   ├── pan-up-alt-insensitive.png
+│   │       │   │   ├── pan-up-alt.png
+│   │       │   │   ├── pan-up-insensitive.png
+│   │       │   │   ├── pan-up.png
+│   │       │   │   ├── pathbar_button_active.png
+│   │       │   │   ├── pathbar_button_prelight.png
+│   │       │   │   ├── progressbar-progress.png
+│   │       │   │   ├── progressbar-trough.png
+│   │       │   │   ├── radio-checked-active.png
+│   │       │   │   ├── radio-checked-hover.png
+│   │       │   │   ├── radio-checked-insensitive.png
+│   │       │   │   ├── radio-checked.png
+│   │       │   │   ├── radio-mixed-active.png
+│   │       │   │   ├── radio-mixed-hover.png
+│   │       │   │   ├── radio-mixed-insensitive.png
+│   │       │   │   ├── radio-mixed.png
+│   │       │   │   ├── radio-unchecked-active.png
+│   │       │   │   ├── radio-unchecked-hover.png
+│   │       │   │   ├── radio-unchecked-insensitive.png
+│   │       │   │   ├── radio-unchecked.png
+│   │       │   │   ├── scale-horz-trough-active.png
+│   │       │   │   ├── scale-horz-trough-insensitive.png
+│   │       │   │   ├── scale-horz-trough.png
+│   │       │   │   ├── scale-slider-active.png
+│   │       │   │   ├── scale-slider-hover.png
+│   │       │   │   ├── scale-slider-insensitive.png
+│   │       │   │   ├── scale-slider.png
+│   │       │   │   ├── scale-vert-trough-active.png
+│   │       │   │   ├── scale-vert-trough-insensitive.png
+│   │       │   │   ├── scale-vert-trough.png
+│   │       │   │   ├── scrollbar-horz-slider-active.png
+│   │       │   │   ├── scrollbar-horz-slider-hover.png
+│   │       │   │   ├── scrollbar-horz-slider-insensitive.png
+│   │       │   │   ├── scrollbar-horz-slider.png
+│   │       │   │   ├── scrollbar-horz-trough.png
+│   │       │   │   ├── scrollbar-vert-ltr-slider-active.png
+│   │       │   │   ├── scrollbar-vert-ltr-slider-hover.png
+│   │       │   │   ├── scrollbar-vert-ltr-slider-insensitive.png
+│   │       │   │   ├── scrollbar-vert-ltr-slider.png
+│   │       │   │   ├── scrollbar-vert-ltr-trough.png
+│   │       │   │   ├── scrollbar-vert-rtl-slider-active.png
+│   │       │   │   ├── scrollbar-vert-rtl-slider-hover.png
+│   │       │   │   ├── scrollbar-vert-rtl-slider-insensitive.png
+│   │       │   │   ├── scrollbar-vert-rtl-slider.png
+│   │       │   │   ├── scrollbar-vert-rtl-trough.png
+│   │       │   │   ├── spin-ltr-down-active.png
+│   │       │   │   ├── spin-ltr-down-hover.png
+│   │       │   │   ├── spin-ltr-down-insensitive.png
+│   │       │   │   ├── spin-ltr-down.png
+│   │       │   │   ├── spin-ltr-up-active.png
+│   │       │   │   ├── spin-ltr-up-hover.png
+│   │       │   │   ├── spin-ltr-up-insensitive.png
+│   │       │   │   ├── spin-ltr-up.png
+│   │       │   │   ├── spin-rtl-down-active.png
+│   │       │   │   ├── spin-rtl-down-hover.png
+│   │       │   │   ├── spin-rtl-down-insensitive.png
+│   │       │   │   ├── spin-rtl-down.png
+│   │       │   │   ├── spin-rtl-up-active.png
+│   │       │   │   ├── spin-rtl-up-hover.png
+│   │       │   │   ├── spin-rtl-up-insensitive.png
+│   │       │   │   ├── spin-rtl-up.png
+│   │       │   │   ├── tab.png
+│   │       │   │   ├── treeview-ltr-button-active.png
+│   │       │   │   ├── treeview-ltr-button-hover.png
+│   │       │   │   ├── treeview-ltr-button.png
+│   │       │   │   ├── treeview-rtl-button-active.png
+│   │       │   │   ├── treeview-rtl-button-hover.png
+│   │       │   │   └── treeview-rtl-button.png
+│   │       │   ├── gtkrc
+│   │       │   ├── hacks.rc
+│   │       │   ├── main.rc
+│   │       │   └── panel.rc
+│   │       ├── gtk-3.0
+│   │       │   ├── assets -> ../gtk-assets
+│   │       │   ├── gtk.css
+│   │       │   └── gtk-dark.css
+│   │       ├── gtk-assets
+│   │       │   ├── header-icon@2.png
+│   │       │   ├── header-icon-alt@2.png
+│   │       │   ├── header-icon-alt.png
+│   │       │   ├── header-icon.png
+│   │       │   ├── scalable
+│   │       │   │   ├── checkbox-checked-symbolic.svg
+│   │       │   │   ├── checkbox-mixed-symbolic.svg
+│   │       │   │   ├── checkbox-unchecked-symbolic.svg
+│   │       │   │   ├── check-symbolic@2.svg
+│   │       │   │   ├── check-symbolic.svg
+│   │       │   │   ├── radio-checked-symbolic.svg
+│   │       │   │   ├── radio-mixed-symbolic.svg
+│   │       │   │   ├── radio-unchecked-symbolic.svg
+│   │       │   │   ├── side-paned.svg
+│   │       │   │   ├── small-checkbox-checked-symbolic.svg
+│   │       │   │   ├── small-checkbox-mixed-symbolic.svg
+│   │       │   │   ├── small-checkbox-unchecked-symbolic.svg
+│   │       │   │   ├── small-radio-checked-symbolic.svg
+│   │       │   │   ├── small-radio-mixed-symbolic.svg
+│   │       │   │   └── small-radio-unchecked-symbolic.svg
+│   │       │   ├── scale-horz-marks-after-slider@2.png
+│   │       │   ├── scale-horz-marks-after-slider-dark@2.png
+│   │       │   ├── scale-horz-marks-after-slider-dark.png
+│   │       │   ├── scale-horz-marks-after-slider-disabled@2.png
+│   │       │   ├── scale-horz-marks-after-slider-disabled-dark@2.png
+│   │       │   ├── scale-horz-marks-after-slider-disabled-dark.png
+│   │       │   ├── scale-horz-marks-after-slider-disabled.png
+│   │       │   ├── scale-horz-marks-after-slider.png
+│   │       │   ├── scale-horz-marks-before-slider@2.png
+│   │       │   ├── scale-horz-marks-before-slider-dark@2.png
+│   │       │   ├── scale-horz-marks-before-slider-dark.png
+│   │       │   ├── scale-horz-marks-before-slider-disabled@2.png
+│   │       │   ├── scale-horz-marks-before-slider-disabled-dark@2.png
+│   │       │   ├── scale-horz-marks-before-slider-disabled-dark.png
+│   │       │   ├── scale-horz-marks-before-slider-disabled.png
+│   │       │   ├── scale-horz-marks-before-slider.png
+│   │       │   ├── scale-slider@2.png
+│   │       │   ├── scale-slider-dark@2.png
+│   │       │   ├── scale-slider-dark.png
+│   │       │   ├── scale-slider-disabled@2.png
+│   │       │   ├── scale-slider-disabled-dark@2.png
+│   │       │   ├── scale-slider-disabled-dark.png
+│   │       │   ├── scale-slider-disabled.png
+│   │       │   ├── scale-slider.png
+│   │       │   ├── scale-vert-marks-after-slider@2.png
+│   │       │   ├── scale-vert-marks-after-slider-dark@2.png
+│   │       │   ├── scale-vert-marks-after-slider-dark.png
+│   │       │   ├── scale-vert-marks-after-slider-disabled@2.png
+│   │       │   ├── scale-vert-marks-after-slider-disabled-dark@2.png
+│   │       │   ├── scale-vert-marks-after-slider-disabled-dark.png
+│   │       │   ├── scale-vert-marks-after-slider-disabled.png
+│   │       │   ├── scale-vert-marks-after-slider.png
+│   │       │   ├── scale-vert-marks-before-slider@2.png
+│   │       │   ├── scale-vert-marks-before-slider-dark@2.png
+│   │       │   ├── scale-vert-marks-before-slider-dark.png
+│   │       │   ├── scale-vert-marks-before-slider-disabled@2.png
+│   │       │   ├── scale-vert-marks-before-slider-disabled-dark@2.png
+│   │       │   ├── scale-vert-marks-before-slider-disabled-dark.png
+│   │       │   ├── scale-vert-marks-before-slider-disabled.png
+│   │       │   ├── scale-vert-marks-before-slider.png
+│   │       │   ├── selectionmode-checkbox-checked@2.png
+│   │       │   ├── selectionmode-checkbox-checked-dark@2.png
+│   │       │   ├── selectionmode-checkbox-checked-dark.png
+│   │       │   ├── selectionmode-checkbox-checked.png
+│   │       │   ├── selectionmode-checkbox-unchecked@2.png
+│   │       │   ├── selectionmode-checkbox-unchecked-dark@2.png
+│   │       │   ├── selectionmode-checkbox-unchecked-dark.png
+│   │       │   ├── selectionmode-checkbox-unchecked.png
+│   │       │   ├── switch-slider-checked@2.png
+│   │       │   ├── switch-slider-checked-dark@2.png
+│   │       │   ├── switch-slider-checked-dark.png
+│   │       │   ├── switch-slider-checked.png
+│   │       │   ├── switch-slider-unchecked@2.png
+│   │       │   ├── switch-slider-unchecked-dark@2.png
+│   │       │   ├── switch-slider-unchecked-dark.png
+│   │       │   └── switch-slider-unchecked.png
+│   │       ├── index.theme
+│   │       └── xfwm4
+│   │           ├── bottom-active.png
+│   │           ├── bottom-inactive.png
+│   │           ├── bottom-left-active.png
+│   │           ├── bottom-left-inactive.png
+│   │           ├── bottom-right-active.png
+│   │           ├── bottom-right-inactive.png
+│   │           ├── close-active.png
+│   │           ├── close-inactive.png
+│   │           ├── close-prelight.png
+│   │           ├── close-pressed.png
+│   │           ├── hide-active.png
+│   │           ├── hide-inactive.png
+│   │           ├── hide-prelight.png
+│   │           ├── hide-pressed.png
+│   │           ├── left-active.png
+│   │           ├── left-inactive.png
+│   │           ├── maximize-active.png
+│   │           ├── maximize-inactive.png
+│   │           ├── maximize-prelight.png
+│   │           ├── maximize-pressed.png
+│   │           ├── maximize-toggled-active.png
+│   │           ├── maximize-toggled-inactive.png
+│   │           ├── maximize-toggled-prelight.png
+│   │           ├── maximize-toggled-pressed.png
+│   │           ├── menu-active.png
+│   │           ├── menu-inactive.png
+│   │           ├── menu-prelight.png
+│   │           ├── menu-pressed.png
+│   │           ├── right-active.png
+│   │           ├── right-inactive.png
+│   │           ├── shade-active.png
+│   │           ├── shade-inactive.png
+│   │           ├── shade-prelight.png
+│   │           ├── shade-pressed.png
+│   │           ├── stick-active.png
+│   │           ├── stick-inactive.png
+│   │           ├── stick-prelight.png
+│   │           ├── stick-pressed.png
+│   │           ├── stick-toggled-active.png
+│   │           ├── stick-toggled-inactive.png
+│   │           ├── stick-toggled-prelight.png
+│   │           ├── stick-toggled-pressed.png
+│   │           ├── themerc
+│   │           ├── title-1-active.png
+│   │           ├── title-1-inactive.png
+│   │           ├── title-2-active.png
+│   │           ├── title-2-inactive.png
+│   │           ├── title-3-active.png
+│   │           ├── title-3-inactive.png
+│   │           ├── title-4-active.png
+│   │           ├── title-4-inactive.png
+│   │           ├── title-5-active.png
+│   │           ├── title-5-inactive.png
+│   │           ├── top-left-active.png
+│   │           ├── top-left-inactive.png
+│   │           ├── top-right-active.png
+│   │           └── top-right-inactive.png
+│   └── xfce4
+│       ├── desktop
+│       │   ├── accels.scm
+│       │   └── icons.screen0.yaml
+│       ├── gtk-3.0
+│       │   └── gtk.css
+│       ├── panel
+│       │   ├── launcher-13
+│       │   │   └── 17819658631.desktop
+│       │   ├── launcher-14
+│       │   │   └── 17819658632.desktop
+│       │   ├── launcher-15
+│       │   │   └── 17819658633.desktop
+│       │   └── launcher-16
+│       │       └── 17819658644.desktop
+│       ├── xfce4-screenshooter
+│       └── xfconf
+│           └── xfce-perchannel-xml
+│               ├── displays.xml
+│               ├── keyboards.xml
+│               ├── thunar.xml
+│               ├── xfce4-appfinder.xml
+│               ├── xfce4-desktop.xml
+│               ├── xfce4-keyboard-shortcuts.xml
+│               ├── xfce4-notifyd.xml
+│               ├── xfce4-panel.xml
+│               ├── xfce4-power-manager.xml
+│               ├── xfce4-screensaver.xml
+│               ├── xfce4-screenshooter.xml
+│               ├── xfce4-session.xml
+│               ├── xfce4-settings-manager.xml
+│               ├── xfwm4.xml
+│               └── xsettings.xml
+└── tree-output.txt
+
+56 directories, 388 files

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=BorealOS-Dark
+Comment=BorealOS default theme - flat, rounded, translucent
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=BorealOS-Dark
+MetacityTheme=BorealOS-Dark
+IconTheme=Papirus-Dark
+CursorTheme=Adwaita
+ButtonLayout=menu:minimize,maximize,close
