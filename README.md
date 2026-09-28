@@ -47,7 +47,7 @@ BorealOS plans to offer a choice of four graphical interfaces during setup:
 ## Kernels
 
 BorealOS comes with 2 linux kernels, which are:
- - 7.0 Current. (Modern, new)
+ - 7.x Current. (Modern, new)
  - 6.18 LTS. (Long-lasting, stable)
 
 <br>
