@@ -21,13 +21,21 @@
    width. 0.92 matches the login/dialog card's own opacity, so the panel
    reads as the same "glass" material as everything else instead of its
    own separate value. */
-#XfcePanelWindow {
+/* .xfce4-panel covers out-of-process plugin windows (systray etc.) that
+   the #XfcePanelWindow-only rule missed, which were falling back to the
+   theme's opaque .xfce4-panel background. */
+#XfcePanelWindow,
+.xfce4-panel {
     background-color: rgba(10, 26, 36, 0.92);
     border-radius: 0;
     margin: 0;
     border: none;
-    border-bottom: 1px solid alpha(#ffffff, 0.08);
     box-shadow: none;
+}
+
+/* Kept separate so plugin embed windows don't each draw their own edge. */
+#XfcePanelWindow {
+    border-bottom: 1px solid alpha(#ffffff, 0.08);
 }
 
 #XfcePanelWindow.horizontal {
