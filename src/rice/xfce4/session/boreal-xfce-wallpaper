@@ -1,0 +1,28 @@
+#!/bin/sh
+wallpaper=/usr/share/boreal-artwork/wallpaper-default.png
+marker="${XDG_STATE_HOME:-$HOME/.local/state}/boreal/wallpaper-applied"
+
+[ -f "$marker" ] && exit 0
+[ -f "$wallpaper" ] || exit 0
+command -v xfconf-query >/dev/null 2>&1 || exit 0
+
+monitors=""
+tries=0
+while [ "$tries" -lt 30 ]; do
+    monitors=$(xfconf-query -c xfce4-desktop -l 2>/dev/null \
+        | sed -n 's#^/backdrop/screen0/\(monitor[^/]*\)/.*#\1#p' | sort -u)
+    [ -n "$monitors" ] && break
+    sleep 1
+    tries=$((tries + 1))
+done
+[ -n "$monitors" ] || exit 0
+
+for monitor in $monitors; do
+    base="/backdrop/screen0/$monitor/workspace0"
+    xfconf-query -c xfce4-desktop -p "$base/last-image" -n -t string -s "$wallpaper"
+    xfconf-query -c xfce4-desktop -p "$base/image-style" -n -t int -s 5
+done
+xfdesktop --reload 2>/dev/null
+
+mkdir -p "$(dirname "$marker")"
+touch "$marker"

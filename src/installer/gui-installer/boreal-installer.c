@@ -348,10 +348,8 @@ static gboolean check_assets(void) {
     if (access("/opt/borealOS/rootfs.tar.gz", F_OK) != 0) { fail_install("rootfs.tar.gz missing"); return FALSE; }
     if (access("/opt/borealOS/de", F_OK) != 0) { fail_install("/opt/borealOS/de missing"); return FALSE; }
     if (access("/opt/borealOS/shell", F_OK) != 0) { fail_install("/opt/borealOS/shell missing"); return FALSE; }
-    // Logged first, unconditionally, so it's always visible in the install
-    // log regardless of what happens afterward - lets you confirm you're
-    // actually booted into the ISO you think you rebuilt, instead of
-    // guessing from symptoms after the fact.
+    if (access("/opt/borealOS/dm", F_OK) != 0) { fail_install("/opt/borealOS/dm missing"); return FALSE; }
+    if (access("/opt/borealOS/rsync-exclude.list", F_OK) != 0) { fail_install("/opt/borealOS/rsync-exclude.list missing"); return FALSE; }
     char *build_info = run_capture("cat /opt/borealOS/build-info 2>/dev/null");
     if (build_info && build_info[0] != '\0') {
         log_line("=== ISO build info ===\n%s=======================", build_info);
@@ -525,7 +523,6 @@ static gboolean partition_disk(void) {
     } else {
         snprintf(cmd, sizeof(cmd), "parted -s %s mkpart bios_boot 1MiB 2MiB", app.disk);
         run_cmd(cmd);
-        run_cmd("true");
     }
 
     double cursor_mib;
@@ -542,8 +539,6 @@ static gboolean partition_disk(void) {
 
     int part_num_counter = app.wipe_disk ? 1 : 0;
     if (part_num_counter == 0) {
-        char *out = shell_get("bash -c \"" "\"");
-        (void)out;
         char cnt_cmd[128];
         snprintf(cnt_cmd, sizeof(cnt_cmd), "parted -m %s print 2>/dev/null | grep -c '^[0-9]'", app.disk);
         char *cnt = shell_get(cnt_cmd);
@@ -659,6 +654,7 @@ static gboolean partition_disk(void) {
         PlannedPart *p = l->data;
         if (!strcmp(p->mountpoint, "/")) { root_fs = p->fs_type; break; }
     }
+    snprintf(app.root_fs, sizeof(app.root_fs), "%s", root_fs);
     if (!strcmp(root_fs, "xfs")) snprintf(cmd, sizeof(cmd), "mkfs.xfs -f %s", app.final_root_dev);
     else if (!strcmp(root_fs, "btrfs")) snprintf(cmd, sizeof(cmd), "mkfs.btrfs -f %s", app.final_root_dev);
     else snprintf(cmd, sizeof(cmd), "mkfs.ext4 -F -L borealOS %s", app.final_root_dev);
@@ -724,14 +720,7 @@ static gboolean mount_target(void) {
 
 static gboolean rsync_system(void) {
     STEP("Copying live system to disk");
-    int rc = run_cmd(
-        "rsync -aAX "
-        "--exclude=/proc/* --exclude=/sys/* --exclude=/dev/* --exclude=/run/* "
-        "--exclude=/tmp/* --exclude=/mnt/* --exclude=/media/* --exclude=/live "
-        "--exclude=/boot/grub --exclude=/boot/efi --exclude=/opt/borealOS "
-        "--exclude=/usr/local/bin/borealOS-install --exclude=/usr/local/bin/boreal-installer "
-        "--exclude=/etc/profile.d/live-welcome.sh "
-        "/ /mnt/");
+    int rc = run_cmd("rsync -aAX --exclude-from=/opt/borealOS/rsync-exclude.list / /mnt/");
     if (rc != 0) { fail_install("rsync failed"); return FALSE; }
     run_cmd("mkdir -p /mnt/proc /mnt/sys /mnt/dev /mnt/run /mnt/tmp /mnt/boot/grub /mnt/boot/efi");
     run_cmd("chmod 1777 /mnt/tmp");
@@ -756,10 +745,6 @@ static gboolean install_bundled_packages(void) {
     bind_mounts();
     run_cmd("cp /etc/resolv.conf /mnt/etc/resolv.conf");
 
-    /* The display manager itself is installed normally in the live env
-       (see build-iso.sh) and rides onto the target via the rsync copy -
-       no separate install needed here. This step now only installs any
-       extra custom .deb packages dropped in <repo>/packages/. */
     if (run_cmd("ls /opt/borealOS/debs/*.deb >/dev/null 2>&1") == 0) {
         run_cmd("mkdir -p /mnt/var/cache/boreal-debs");
         run_cmd("cp /opt/borealOS/debs/*.deb /mnt/var/cache/boreal-debs/");
@@ -872,19 +857,6 @@ static gboolean configure_system(void) {
     write_file("/mnt/etc/apt/apt.conf.d/70boreal-noninteractive",
         "DPkg::Options {\n   \"--force-confdef\";\n   \"--force-confold\";\n}\n");
 
-    /* This installer is offline by design: everything it needs (DE, DM,
-       chrony, elogind, polkit, ...) was already installed and verified at
-       ISO-build time in build-iso.sh and rsynced onto the target as-is.
-       We deliberately do NOT run "apt-get update" or any apt-get install
-       here anymore - that used to fetch a live Debian trixie package index
-       and (re-)install chrony/elogind/polkit against it, which could pull
-       newer package versions than what's on disk and let apt's solver
-       "resolve" the resulting conflict by silently removing part of the
-       desktop environment instead of failing loudly. The sources.list
-       above is still written so the *installed* system has proper repos
-       configured for the user's own "apt update" after first boot - this
-       installer itself just never touches the network. */
-
     char script[4096];
     snprintf(script, sizeof(script),
         "set -e\n"
@@ -906,17 +878,8 @@ static gboolean configure_system(void) {
         fail_install("System configuration failed");
         return FALSE;
     }
-    run_cmd("find /mnt/usr/share \\( -name '*debian*' -not -path '*/dpkg/*' -not -path '*/apt/*' -not -path '*/python3/*' \\) -delete");
-    run_cmd("rm -rf /mnt/usr/share/images/desktop-base /mnt/usr/share/images/vendor-logos");
-
-    
     STEP("Configuring time sync and seat management");
     bind_mounts();
-    // chrony/elogind/libpam-elogind/polkitd/pkexec are already installed at
-    // ISO-build time (build-iso.sh) and rsynced onto the target along with
-    // everything else - this installer is offline by design and never
-    // touches the network, so this just verifies they're present rather
-    // than trying to (re-)install them.
     if (run_cmd("chroot /mnt sh -c 'command -v chronyd' >/dev/null 2>&1 || chroot /mnt sh -c 'command -v chrony' >/dev/null 2>&1") != 0)
         log_line("WARN: chrony missing on target - it should have been baked into the ISO by build-iso.sh");
     if (run_cmd("chroot /mnt sh -c 'command -v elogind' >/dev/null 2>&1") != 0)
@@ -950,41 +913,6 @@ static gboolean configure_system(void) {
         "});\n");
     unbind_mounts();
 
-    if (run_cmd("test -s /mnt/usr/share/python3/debian_defaults") != 0) {
-        char *pyver = run_capture("ls /mnt/usr/lib/ | grep -oP '^python3\\.[0-9]+$' | sort -V | tail -1");
-        if (pyver) g_strstrip(pyver);
-        if (pyver && pyver[0]) {
-            char pybuf[512];
-            const char *verno = pyver + strlen("python3.");
-            snprintf(pybuf, sizeof(pybuf),
-                "[DEFAULT]\ndefault-version = %s\nsupported-versions = %s\n"
-                "unsupported-versions =\nrequested-versions = 3.%s\n",
-                pyver, pyver, verno);
-            run_cmd("mkdir -p /mnt/usr/share/python3");
-            write_file("/mnt/usr/share/python3/debian_defaults", pybuf);
-        }
-        g_free(pyver);
-    }
-
-    STEP("Installing artwork");
-    run_cmd("mkdir -p /mnt/usr/share/boreal-artwork");
-    // /opt/borealOS/default-wallpaper.png is the already-scaled, correct
-    // default wallpaper (see build-iso.sh's comment where it's staged
-    // there). This used to copy from background_main.png - the OLD
-    // default wallpaper source, before it was switched to the rice's
-    // default-wallpaper.jpg - which is the actual reason the desktop
-    // wallpaper never reflected any fix to the wallpaper-setting xfconf
-    // logic elsewhere in this file: this repair step ran afterward and
-    // overwrote the correct file with the wrong one on every install.
-    run_cmd("cp /opt/borealOS/default-wallpaper.png /mnt/usr/share/boreal-artwork/wallpaper-default.png");
-    run_cmd("cp /opt/borealOS/background_2.png    /mnt/usr/share/boreal-artwork/wallpaper-waves.png");
-    run_cmd("cp /opt/borealOS/background_one.png  /mnt/usr/share/boreal-artwork/wallpaper-alt.png");
-    run_cmd("cp /opt/borealOS/logo.png            /mnt/usr/share/boreal-artwork/logo.png");
-    run_cmd("cp /opt/borealOS/logo-ghost.png       /mnt/usr/share/boreal-artwork/logo-ghost.png 2>/dev/null || true");
-    run_cmd("cp /opt/borealOS/logo-ghost.png       /mnt/usr/share/pixmaps/boreal-logo-ghost.png 2>/dev/null || true");
-    run_cmd("cp /opt/borealOS/banner.png /mnt/usr/share/boreal-artwork/banner.png 2>/dev/null || true");
-    run_cmd("chmod 755 /mnt/usr/share/boreal-artwork");
-    run_cmd("chmod 644 /mnt/usr/share/boreal-artwork/*.png");
     return TRUE;
 }
 
@@ -1015,26 +943,7 @@ static gboolean remove_live_boot(void) {
     run_cmd("chroot /mnt dpkg -r --force-depends live-boot live-boot-initramfs-tools live-config live-config-systemd");
     run_cmd("find /mnt/usr/share/initramfs-tools /mnt/etc/initramfs-tools /mnt/etc/grub.d -name '*live*' -delete");
     run_cmd("rm -rf /mnt/lib/live /mnt/usr/lib/live");
-    run_cmd("rm -f /mnt/etc/profile.d/boreal-live.sh /mnt/usr/local/bin/boreal-start-graphical");
-
-    if (strcmp(app.de_choice, "XFCE") != 0) {
-        STEP("Removing XFCE installer host environment");
-        run_cmd("chroot /mnt apt-get remove --purge -y xfce4 xfce4-terminal xfwm4 xfdesktop4 xfconf xfce4-session xfce4-panel thunar");
-        run_cmd("chroot /mnt apt-get autoremove --purge -y");
-    }
-    run_cmd("rm -rf /mnt/opt/borealOS");
-    run_cmd("rm -f /mnt/usr/local/bin/boreal-installer");
-    run_cmd("rm -f /mnt/usr/share/applications/boreal-installer.desktop");
-    run_cmd("rm -rf /mnt/usr/share/boreal-installer");
-    run_cmd("rm -f \"/mnt/root/Desktop/Install BorealOS.desktop\" \"/mnt/etc/skel/Desktop/Install BorealOS.desktop\"");
-    run_cmd("find /mnt/home -maxdepth 2 -name 'Install BorealOS.desktop' -delete 2>/dev/null || true");
-
-    // Plymouth is now properly uninstalled via dpkg at ISO build time (see
-    // build-iso.sh), instead of just deleting its files - which used to
-    // leave dpkg's database inconsistent and break update-initramfs on
-    // every install. This should be a no-op; kept only as a fallback.
     if (run_cmd("chroot /mnt dpkg -l plymouth 2>/dev/null | grep -q '^ii'") == 0) {
-        STEP("plymouth still present on target, removing as fallback");
         run_cmd("chroot /mnt dpkg -r --force-depends plymouth plymouth-themes libplymouth5 "
                 "plymouth-label plymouth-theme-debian-logo plymouth-theme-debian-spinner");
     }
@@ -1067,183 +976,37 @@ static gboolean restore_inittab(void) {
     return TRUE;
 }
 
-// write_boreal_theme_script() used to live here: a hardcoded C-string copy
-// of boreal-apply-theme.sh, written to /mnt AFTER rsync_system() had
-// already copied the correct, current version of that exact file from the
-// live squashfs - silently overwriting it with whatever was hardcoded here
-// at the time this was last edited. That copy went stale (still had the
-// old monitor-guessing wallpaper logic, use_compositing=true with no
-// xcompmgr) for multiple rounds of fixes to the real script without
-// anyone noticing, because nothing here ever re-read or diffed against
-// the live version - it just always won on every GUI install.
-// rsync_system already brings over /usr/local/bin/boreal-apply-theme.sh
-// and /etc/skel/.config/autostart/boreal-apply-theme.desktop correctly,
-// so this function and its call are deleted rather than kept in sync by
-// hand a second time - see setup_de()'s XFCE branch, which now just
-// verifies those files are present after rsync instead of rewriting them.
+static gboolean enable_service(const char *svc) {
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd),
+        "mkdir -p /mnt/etc/runlevels/default /mnt/etc/rc2.d && "
+        "ln -sf /etc/init.d/%s /mnt/etc/runlevels/default/%s && "
+        "ln -sf ../init.d/%s /mnt/etc/rc2.d/S03%s",
+        svc, svc, svc, svc);
+    return run_cmd(cmd) == 0;
+}
 
-
-
-static gboolean setup_de(void) {
-    STEP("Configuring desktop environment");
-    run_cmd("mkdir -p /mnt/etc/runlevels/default /mnt/etc/rc2.d");
-
-    if (strcmp(app.de_choice, "KDE Plasma") == 0) {
-        run_cmd("ln -sf /etc/init.d/sddm /mnt/etc/runlevels/default/sddm");
-        run_cmd("ln -sf ../init.d/sddm /mnt/etc/rc2.d/S03sddm");
-        run_cmd("mkdir -p /mnt/etc/sddm.conf.d");
-        write_file("/mnt/etc/sddm.conf.d/borealos.conf",
-            "[General]\nDisplayServer=x11\n[Theme]\nBackground=/usr/share/boreal-artwork/wallpaper-default.png\n");
-    } else if (strcmp(app.de_choice, "XFCE") == 0) {
-        run_cmd("mkdir -p /mnt/etc/xdg/xfce4");
-        write_file("/mnt/etc/xdg/xfce4/helpers.rc", "TerminalEmulator=kitty\nFileManager=Thunar\n");
-        run_cmd("mkdir -p /mnt/etc/xdg");
-        write_file("/mnt/etc/xdg/mimeapps.list",
-            "[Default Applications]\ninode/directory=thunar.desktop\n");
-        run_cmd("mkdir -p /mnt/etc/runlevels/default");
-        run_cmd("ln -sf /etc/init.d/lightdm /mnt/etc/runlevels/default/lightdm");
-        run_cmd("ln -sf ../init.d/lightdm /mnt/etc/rc2.d/S03lightdm");
-
-        // This installer is offline by design - there is no package mirror
-        // available at install time. XFCE is supposed to already be
-        // present (rsynced from the live squashfs - build-iso.sh now
-        // hard-fails at ISO build time if startxfce4/xfwm4/xfce4-panel
-        // aren't present, specifically so this can't happen with a
-        // correctly built ISO). If this ever fires, the ISO was built
-        // wrong or is stale - fail clearly instead of attempting a
-        // network install that cannot work here.
-        STEP("Verifying XFCE is actually installed on target");
-        if (run_cmd("chroot /mnt sh -c 'command -v startxfce4' >/dev/null 2>&1") != 0) {
-            // dpkg's status letters actually distinguish two very different
-            // situations that "missing" alone can't: 'rc' means the package
-            // WAS installed and got removed (config left behind) - proof
-            // something in this install run actively removed it. No entry
-            // at all means it was never on this disk in the first place -
-            // points at the ISO build, not the install run. Logging this
-            // per-package breakdown turns "XFCE is missing, somehow" into
-            // an actual diagnosis instead of another guess.
-            const char *core_pkgs[] = {"xfce4-panel", "xfdesktop4", "xfwm4", "xfconf",
-                                         "xfce4-session", "thunar", "lightdm", NULL};
-            log_line("=== XFCE package status on target ===");
-            for (int i = 0; core_pkgs[i]; i++) {
-                char status_cmd[160];
-                snprintf(status_cmd, sizeof(status_cmd),
-                    "chroot /mnt dpkg -l %s 2>/dev/null | tail -n1 | awk '{print $1}'", core_pkgs[i]);
-                char *status = run_capture(status_cmd);
-                if (status) g_strstrip(status);
-                if (!status || status[0] == '\0') {
-                    log_line("  %-16s NEVER INSTALLED (not on this disk at all - points at the ISO build)", core_pkgs[i]);
-                } else if (strcmp(status, "ii") == 0) {
-                    log_line("  %-16s ii (installed and fine)", core_pkgs[i]);
-                } else {
-                    log_line("  %-16s %s (was installed, now removed - something in THIS install run did it)", core_pkgs[i], status);
-                }
-                g_free(status);
-            }
-            log_line("======================================");
-            fail_install("startxfce4 is missing on target - see the per-package dpkg status just above in the log for whether this ISO never had XFCE, or something during this install removed it.");
-            return FALSE;
-        }
-
-        // fonts-ibm-plex/papirus-icon-theme/adwaita-icon-theme/panel plugins
-        // are already installed at ISO build time (DE_EXTRA_PKGS) and ride
-        // along here via rsync - no reinstall needed or possible offline.
-        STEP("Verifying theming packages on target");
-        if (run_cmd("chroot /mnt dpkg -l fonts-ibm-plex 2>/dev/null | grep -q '^ii'") != 0) {
-            STEP("Some theming packages may be missing from the live image - fonts/icons may fall back to defaults");
-        }
-
-        STEP("Installing BorealOS-Dark theme");
-        if (!g_file_test("/mnt/usr/share/themes/BorealOS-Dark", G_FILE_TEST_IS_DIR)) {
-            run_cmd("mkdir -p /mnt/usr/share/themes");
-            run_cmd("cp -r /usr/share/themes/BorealOS-Dark /mnt/usr/share/themes/BorealOS-Dark 2>/dev/null || true");
-        }
-
-        run_cmd("mkdir -p /mnt/etc/lightdm");
-        if (run_cmd("ls /opt/borealOS/lightdm/* >/dev/null 2>&1") == 0) {
-            run_cmd("cp -r /opt/borealOS/lightdm/. /mnt/etc/lightdm/");
-        } else {
-            write_file("/mnt/etc/lightdm/lightdm-gtk-greeter.conf",
-                "[greeter]\nbackground=/usr/share/boreal-artwork/wallpaper-default.png\n"
-                "theme-name=BorealOS-Dark\nicon-theme-name=Papirus-Dark\ncursor-theme-name=Adwaita\nfont-name=IBM Plex Sans 10\n"
-                "hide-user-image=true\n");
-        }
-        run_cmd("mkdir -p /mnt/etc/lightdm/lightdm.conf.d");
-        write_file("/mnt/etc/lightdm/lightdm.conf.d/60-boreal.conf",
-            "[LightDM]\nlogind-check-graphical=true\n\n[Seat:*]\ngreeter-session=lightdm-gtk-greeter\n");
-
-        STEP("Fixing default wallpaper");
-        run_cmd("find /mnt/usr/share/backgrounds /mnt/usr/share/wallpapers /mnt/usr/share/xfce4/backdrops "
-                "/mnt/usr/share/images/desktop-base -type f \\( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \\) "
-                "-exec cp /mnt/usr/share/boreal-artwork/wallpaper-default.png {} \\; 2>/dev/null || true");
-
-        STEP("Verifying theme script and autostart came over from rsync");
-        // See the long comment where write_boreal_theme_script() used to
-        // be defined, just above setup_de() - it's deleted, not just
-        // emptied, because rsync_system() already copies the correct,
-        // current /usr/local/bin/boreal-apply-theme.sh and its autostart
-        // entry from the live squashfs, and a second hardcoded copy here
-        // is exactly what went stale for multiple rounds of fixes.
-        if (run_cmd("[ -x /mnt/usr/local/bin/boreal-apply-theme.sh ]") != 0) {
-            log_line("WARNING: boreal-apply-theme.sh missing/not executable on target after rsync - theme won't self-apply at login");
-        }
-        if (run_cmd("[ -f /mnt/etc/skel/.config/autostart/boreal-apply-theme.desktop ]") != 0) {
-            log_line("WARNING: boreal-apply-theme.desktop missing from target skel after rsync");
-        }
-
-        run_cmd("mkdir -p /mnt/root/.config/autostart");
-        run_cmd("cp /mnt/etc/skel/.config/autostart/boreal-apply-theme.desktop /mnt/root/.config/autostart/");
-        // xcompmgr for the XFCE session itself - xfwm4's own built-in
-        // compositor is a different, unconfirmed code path from the
-        // xcompmgr already proven working for lightdm's greeter (via
-        // display-setup-script), so the session gets that same proven
-        // setup instead. This copy was entirely missing before - the
-        // XFCE session had no compositor of its own at all when
-        // installed through this GUI installer.
-        run_cmd("[ -f /mnt/etc/skel/.config/autostart/boreal-compositor.desktop ] && "
-                "cp /mnt/etc/skel/.config/autostart/boreal-compositor.desktop /mnt/root/.config/autostart/ || true");
-        run_cmd("chroot /mnt chown -R root:root /root/.config 2>/dev/null || true");
-        for (GList *l = app.extra_users; l; l = l->next) {
-            ExtraUser *u = l->data;
-            char home[300], mkcmd[350], cp1[400], cp2[500], chowncmd[400];
-            snprintf(home, sizeof(home), "/mnt/home/%s", u->name);
-            if (!g_file_test(home, G_FILE_TEST_IS_DIR)) continue;
-            snprintf(mkcmd, sizeof(mkcmd), "mkdir -p '%s/.config/autostart'", home);
-            run_cmd(mkcmd);
-            snprintf(cp1, sizeof(cp1), "cp /mnt/etc/skel/.config/autostart/boreal-apply-theme.desktop '%s/.config/autostart/'", home);
-            run_cmd(cp1);
-            snprintf(cp2, sizeof(cp2), "[ -f /mnt/etc/skel/.config/autostart/boreal-compositor.desktop ] && "
-                     "cp /mnt/etc/skel/.config/autostart/boreal-compositor.desktop '%s/.config/autostart/' || true", home);
-            run_cmd(cp2);
-            snprintf(chowncmd, sizeof(chowncmd), "chroot /mnt chown -R %s:%s /home/%s/.config 2>/dev/null || true",
-                     u->name, u->name, u->name);
-            run_cmd(chowncmd);
-        }
-        // Deliberately NOT setting .face here anymore. This used to copy
-        // logo.png as every user's account avatar - which is exactly what
-        // lightdm-gtk-greeter was showing as the large user icon on the
-        // login screen. Removed entirely rather than swapped for a
-        // smaller image, since the ask was for no avatar at all, not a
-        // resized one.
-    } else if (strcmp(app.de_choice, "Niri") == 0) {
-        run_cmd("mkdir -p /mnt/etc/niri");
-        write_file("/mnt/etc/niri/config.kdl",
-            "input {\n    keyboard { xkb { layout \"us\" } }\n    touchpad { tap }\n}\n"
-            "layout {\n    gaps 16\n    border { width 2; active-color \"#4dffd2\"; inactive-color \"#0d1b2a\" }\n"
-            "    focus-ring { off }\n}\nbinds {\n    Mod+Return { spawn \"foot\"; }\n"
-            "    Mod+D { spawn \"wofi\" \"--show\" \"run\"; }\n    Mod+Shift+Q { close-window; }\n"
-            "    Mod+Shift+E { quit; }\n    Mod+Left  { focus-column-left; }\n"
-            "    Mod+Right { focus-column-right; }\n    Mod+Up    { focus-window-up; }\n"
-            "    Mod+Down  { focus-window-down; }\n}\n");
-        for (GList *l = app.extra_users; l; l = l->next) {
-            ExtraUser *u = l->data;
-            char cmd[512];
-            snprintf(cmd, sizeof(cmd), "mkdir -p /mnt/home/%s/.config/niri && cp /mnt/etc/niri/config.kdl /mnt/home/%s/.config/niri/ && chroot /mnt chown -R %s:%s /home/%s/.config",
-                u->name, u->name, u->name, u->name, u->name);
-            run_cmd(cmd);
-        }
+static gboolean setup_display_manager(void) {
+    STEP("Enabling display manager");
+    char *dm = shell_get("cat /opt/borealOS/dm");
+    if (!dm || !dm[0]) {
+        log_line("No display manager for %s", app.de_choice);
+        g_free(dm);
+        return TRUE;
     }
-    return TRUE;
+    char path[128];
+    snprintf(path, sizeof(path), "/mnt/etc/init.d/%s", dm);
+    if (access(path, X_OK) != 0) {
+        char msg[192];
+        snprintf(msg, sizeof(msg), "Display manager service %s missing on target. Rebuild the ISO.", dm);
+        fail_install(msg);
+        g_free(dm);
+        return FALSE;
+    }
+    gboolean ok = enable_service(dm);
+    if (!ok) fail_install("Could not enable the display manager");
+    g_free(dm);
+    return ok;
 }
 
 static gboolean install_grub(void) {
@@ -1410,14 +1173,14 @@ static void *install_thread(void *arg) {
         {"Setting passwords", set_passwords, 0.72},
         {"Finalizing system", remove_live_boot, 0.85},
         {"Restoring inittab", restore_inittab, 0.87},
-        {"Configuring desktop", setup_de, 0.90},
+        {"Enabling display manager", setup_display_manager, 0.90},
         {"Installing GRUB", install_grub, 0.97},
         {"Verifying", verify_install, 1.00},
     };
     for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
         set_progress(steps[i].frac - 0.02, steps[i].name);
         gboolean use_bind = (steps[i].fn == configure_system || steps[i].fn == set_passwords ||
-                              steps[i].fn == remove_live_boot || steps[i].fn == setup_de ||
+                              steps[i].fn == remove_live_boot || steps[i].fn == setup_display_manager ||
                               steps[i].fn == install_grub);
         if (use_bind) bind_mounts();
         gboolean ok = steps[i].fn();
@@ -1432,6 +1195,14 @@ static void *install_thread(void *arg) {
 }
 
 static gboolean sync_selected_disk(void);
+
+static gboolean matches_pattern(const char *value, const char *pattern) {
+    GRegex *re = g_regex_new(pattern, 0, 0, NULL);
+    if (!re) return FALSE;
+    gboolean ok = g_regex_match(re, value, 0, NULL);
+    g_regex_unref(re);
+    return ok;
+}
 
 static void collect_state_from_ui(void) {
     sync_selected_disk();
@@ -1595,6 +1366,10 @@ static gboolean validate_page(int idx) {
         const char *p2 = gtk_entry_get_text(GTK_ENTRY(app.pass2_entry));
         if (!h[0] || !p1[0] || strcmp(p1, p2)) {
             show_message("Warning", "Enter a hostname and matching root passwords.", FALSE);
+            return FALSE;
+        }
+        if (!matches_pattern(h, "^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")) {
+            show_message("Warning", "Hostname may only contain letters, digits and hyphens.", FALSE);
             return FALSE;
         }
     } else if (!strcmp(name, "timezone")) {
@@ -2063,6 +1838,10 @@ static void on_add_user(GtkButton *btn, gpointer data) {
         const char *pass2 = gtk_entry_get_text(GTK_ENTRY(pass2_e));
         if (!name[0] || !pass[0] || strcmp(pass, pass2)) {
             show_message("Warning", "Enter a username and matching passwords.", FALSE);
+            continue;
+        }
+        if (!matches_pattern(name, "^[a-z_][a-z0-9_-]{0,31}$")) {
+            show_message("Warning", "Username may only contain lowercase letters, digits, - and _.", FALSE);
             continue;
         }
         ExtraUser *u = g_new0(ExtraUser, 1);
