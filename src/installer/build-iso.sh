@@ -60,7 +60,7 @@ enforce_no_live_dm() {
     left="$(find "$root/etc/runlevels" "$root"/etc/rc[0-6S].d \
                 \( -name '*lightdm*' -o -name '*sddm*' -o -name '*gdm*' -o -name '*xdm*' \
                    -o -name '*wdm*' -o -name '*slim*' -o -name '*nodm*' \) \
-                \( -type l -o -type f \) 2>/dev/null)"
+                \( -type l -o -type f \) 2>/dev/null || true)"
     [ -z "$left" ] || die "Display manager still enabled in live env: $left"
     ok "No display manager autostart in the live env."
 }
