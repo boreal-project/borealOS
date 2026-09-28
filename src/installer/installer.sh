@@ -244,12 +244,23 @@ partition_disk() {
     for sw in $(awk -v d="$DISK" '$1 ~ "^"d {print $1}' /proc/swaps 2>/dev/null); do
         swapoff "$sw" 2>/dev/null || true
     done
-    vgchange -an borealvg 2>/dev/null || true
-    vgremove -f borealvg 2>/dev/null || true
+    # Tear down ANY VG/PV on this disk, not just "borealvg" - a prior
+    # install (or lvm2's own udev auto-activation) can leave a
+    # differently-named VG holding a partition open.
+    for vg in $(pvs --noheadings -o vg_name,pv_name 2>/dev/null \
+                    | awk -v d="$DISK" '$2 ~ "^"d {print $1}'); do
+        [ -n "$vg" ] && vgchange -an "$vg" 2>/dev/null || true
+        [ -n "$vg" ] && vgremove -f "$vg" 2>/dev/null || true
+    done
     for pv in $(pvs --noheadings -o pv_name 2>/dev/null | tr -d ' '); do
         case "$pv" in "$DISK"*) pvremove -ff -y "$pv" 2>/dev/null || true ;; esac
     done
-    cryptsetup luksClose borealcrypt 2>/dev/null || true
+    # Same for LUKS: close any dm-crypt mapping on this disk regardless
+    # of name, not just "borealcrypt".
+    for dm in $(dmsetup ls --target crypt 2>/dev/null | awk '{print $1}'); do
+        dmsetup deps -o devname "$dm" 2>/dev/null | grep -q "$(basename "$DISK")" \
+            && cryptsetup luksClose "$dm" 2>/dev/null || true
+    done
     for dm in $(dmsetup ls --target linear 2>/dev/null | awk '{print $1}'); do
         dmsetup deps -o devname "$dm" 2>/dev/null | grep -q "$(basename "$DISK")" \
             && dmsetup remove -f "$dm" 2>/dev/null || true
@@ -257,6 +268,11 @@ partition_disk() {
     wipefs -af "$DISK" 2>/dev/null || true
     for p in "${DISK}"*[0-9]*; do
         [ -b "$p" ] && wipefs -af "$p" 2>/dev/null || true
+    done
+    # Kill any process still holding a partition open (udev/blkid probes
+    # right after boot are the usual cause).
+    for p in "${DISK}"*[0-9]*; do
+        [ -b "$p" ] && fuser -k "$p" 2>/dev/null || true
     done
     partprobe "$DISK" 2>/dev/null
     udevadm settle 2>/dev/null || sleep 2
