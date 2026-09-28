@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=BorealOS Wallpaper
+Exec=/usr/local/bin/boreal-xfce-wallpaper
+OnlyShowIn=XFCE;
+NoDisplay=true
+StartupNotify=false

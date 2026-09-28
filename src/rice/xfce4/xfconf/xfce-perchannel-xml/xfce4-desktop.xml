@@ -1,15 +1,6 @@
 <?xml version="1.1" encoding="UTF-8"?>
 
 <channel name="xfce4-desktop" version="1.0">
-  <!--
-    Intentionally NO per-monitor "backdrop" tree here. Baking in monitor
-    names (monitor0, monitorVirtual-1, ...) and an absolute image-path from
-    the dev machine is what broke wallpapers on installs before: xfdesktop
-    keys wallpaper properties by the *actual connected output name*
-    (monitorHDMI-1, monitoreDP-1, ...), so a static dump from one machine
-    silently does not apply on any other. /usr/local/bin/boreal-apply-theme.sh
-    sets the wallpaper at runtime for whatever monitors are actually present.
-  -->
   <property name="last-settings-migration-version" type="uint" value="1"/>
   <property name="desktop-icons" type="empty">
     <property name="style" type="int" value="2"/>
