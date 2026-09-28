@@ -555,7 +555,7 @@ apt-get install -y --no-install-recommends \
     live-boot live-boot-initramfs-tools \
     openrc \
     network-manager ifupdown dhcpcd5 \
-    parted dosfstools e2fsprogs pmisc \
+    parted dosfstools e2fsprogs psmisc \
     cryptsetup cryptsetup-initramfs lvm2 \
     btrfs-progs xfsprogs \
     passwd sudo \
