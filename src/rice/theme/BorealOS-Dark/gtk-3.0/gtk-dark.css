@@ -77,9 +77,6 @@ window.background.csd stack stack stack frame > list row.activatable:only-child,
   border-radius: 7px;
 }
 
-/***************
- * Base States *
- ***************/
 .background {
   background-color: rgba(52, 52, 59, 0.999);
   color: #FFFFFF;
@@ -213,9 +210,6 @@ assistant .sidebar label.highlight {
   opacity: 0.9;
 }
 
-/*********************
- * Spinner Animation *
- *********************/
 @keyframes spin {
   to {
     -gtk-icon-transform: rotate(1turn);
@@ -237,9 +231,6 @@ spinner:checked:disabled {
   opacity: 0.45;
 }
 
-/****************
- * Text Entries *
- ****************/
 spinbutton:not(.vertical), entry {
   min-height: 36px;
   padding: 0 8px;
@@ -494,9 +485,6 @@ treeview entry {
   color: rgba(255, 255, 255, 0.7);
 }
 
-/***********
- * Buttons *
- ***********/
 @keyframes needs_attention {
   from {
     background-image: -gtk-gradient(radial, center center, 0, center center, 0.001, to(#7C4DFF), to(transparent));
@@ -906,9 +894,6 @@ button.color {
   padding: 6px;
 }
 
-/*********
- * Links *
- *********/
 *:link, button:link,
 button:visited {
   color: #039BE5;
@@ -930,9 +915,6 @@ button:visited > label {
   text-decoration-line: underline;
 }
 
-/*****************
- * GtkSpinButton *
- *****************/
 spinbutton:not(.vertical) {
   padding: 0;
 }
@@ -998,9 +980,6 @@ treeview spinbutton:not(.vertical) entry {
   padding: 1px 2px;
 }
 
-/**************
- * ComboBoxes *
- **************/
 combobox arrow {
   -gtk-icon-source: -gtk-icontheme("pan-down-symbolic");
   min-height: 16px;
@@ -1100,9 +1079,6 @@ combobox:drop(active) {
   color: rgba(255, 255, 255, 0.5);
 }
 
-/************
- * Toolbars *
- ************/
 toolbar {
   -GtkWidget-window-dragging: true;
   padding: 2px;
@@ -1188,9 +1164,6 @@ searchbar > revealer > box {
   padding: 6px;
 }
 
-/************
- * Pathbars *
- ************/
 .caja-pathbar button,
 .path-bar button {
   padding-left: 6px;
@@ -1223,9 +1196,6 @@ searchbar > revealer > box {
   padding-right: 4px;
 }
 
-/**************
- * Tree Views *
- **************/
 treeview.view {
   border-left-color: rgba(255, 255, 255, 0.23);
   border-top-color: rgba(255, 255, 255, 0.08);
@@ -1359,9 +1329,6 @@ treeview.view acceleditor > label {
   background-color: #1a5fb4;
 }
 
-/*********
- * Menus *
- *********/
 menubar,
 .menubar {
   -GtkWidget-window-dragging: true;
@@ -1541,9 +1508,6 @@ menuitem:disabled accelerator {
   color: #c1c1c4;
 }
 
-/************
- * Popovers *
- ************/
 popover.background modelbutton.flat,
 popover.background menuitem.button.flat,
 popover.background spinbutton.vertical button, popover.background row.button.flat.menuitem.activatable,
@@ -1978,9 +1942,6 @@ popover.background.combo list > row.activatable {
   padding: 6px 12px;
 }
 
-/*************
- * Notebooks *
- *************/
 frame > paned > notebook > header, notebook.frame > header {
   background-color: mix(#31313a,#34343b,0.5);
 }
@@ -2245,9 +2206,6 @@ notebook > header button {
   padding: 6px;
 }
 
-/**************
- * Scrollbars *
- **************/
 scrollbar {
   transition: all 100ms cubic-bezier(0, 0, 0.2, 1);
   background-color: rgba(49, 49, 58, 0.65);
@@ -2389,9 +2347,6 @@ scrollbar.horizontal button.up {
   -gtk-icon-source: -gtk-icontheme("pan-start-symbolic");
 }
 
-/**********
- * Switch *
- **********/
 switch {
   transition: all 225ms cubic-bezier(0, 0, 0.2, 1);
   margin: 6px 0;
@@ -2466,9 +2421,6 @@ row:selected switch:checked slider {
   background-color: #561aff;
 }
 
-/*************************
- * Check and Radio items *
- *************************/
 .view.content-view.check:not(list),
 .content-view .tile check:not(list) {
   min-height: 40px;
@@ -2639,21 +2591,17 @@ menu menuitem check, menu menuitem check:hover, menu menuitem check:disabled, me
   box-shadow: none;
 }
 
-
 check {
   -gtk-icon-source: -gtk-recolor(url("assets/scalable/checkbox-unchecked-symbolic.svg"));
 }
-
 
 check:checked {
   -gtk-icon-source: -gtk-recolor(url("assets/scalable/checkbox-checked-symbolic.svg"));
 }
 
-
 check:indeterminate {
   -gtk-icon-source: -gtk-recolor(url("assets/scalable/checkbox-mixed-symbolic.svg"));
 }
-
 
 radio {
   -gtk-icon-source: -gtk-recolor(url("assets/scalable/radio-unchecked-symbolic.svg"));
@@ -2661,21 +2609,17 @@ radio {
   border-image-width: 24px;
 }
 
-
 radio:indeterminate {
   -gtk-icon-source: -gtk-recolor(url("assets/scalable/radio-mixed-symbolic.svg"));
 }
-
 
 radio {
   border-image-source: -gtk-gradient(radial, center center, 0, center center, 0.001, to(#7C4DFF), to(transparent));
 }
 
-
 radio:checked:not(:indeterminate) {
   border-image-source: -gtk-gradient(radial, center center, 0, center center, 0.1041666667, to(#7C4DFF), to(transparent));
 }
-
 
 radio:checked:not(:indeterminate):disabled {
   border-image-source: -gtk-gradient(radial, center center, 0, center center, 0.1041666667, to(rgba(124, 77, 255, 0.5)), to(transparent));
@@ -2794,9 +2738,6 @@ treeview.view radio:checked {
   border-image: none;
 }
 
-/***************
- * Header bars *
- ***************/
 .nemo-window toolbar.primary-toolbar > toolitem > box > button, headerbar button:not(.suggested-action):not(.destructive-action) {
   border-image: none;
   color: rgba(255, 255, 255, 0.7);
@@ -3145,9 +3086,6 @@ window.csd > .titlebar:not(headerbar) {
   background-color: #31313a;
 }
 
-/************
- * GtkScale *
- ************/
 scale {
   min-height: 4px;
   min-width: 4px;
@@ -3352,9 +3290,6 @@ scale.color.vertical:dir(rtl) slider {
   margin-left: -6px;
 }
 
-/*****************
- * Progress bars *
- *****************/
 progressbar {
   color: rgba(255, 255, 255, 0.5);
   font-size: smaller;
@@ -3388,9 +3323,6 @@ progressbar trough.empty progress {
   all: unset;
 }
 
-/*************
- * Level Bar *
- *************/
 levelbar.horizontal block {
   min-height: 4px;
 }
@@ -3442,9 +3374,6 @@ levelbar block.empty {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
-/****************
- * Print dialog *
-*****************/
 printdialog paper {
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -3456,9 +3385,6 @@ printdialog .dialog-action-box {
   margin: 12px;
 }
 
-/**********
- * Frames *
- **********/
 frame > border,
 .frame {
   margin: 0;
@@ -3560,9 +3486,6 @@ preferences stacksidebar.sidebar list separator.sidebar, .tweak-categories separ
   background-color: transparent;
 }
 
-/*********
- * Lists *
- *********/
 list {
   border-color: rgba(255, 255, 255, 0.08);
   background-color: #31313a;
@@ -3598,9 +3521,6 @@ row button.circular {
   margin: 0 4px;
 }
 
-/*********************
- * App Notifications *
- *********************/
 .app-notification {
   margin: 8px;
 }
@@ -3610,9 +3530,6 @@ row button.circular {
   border-style: none;
 }
 
-/*************
- * Expanders *
- *************/
 expander title > arrow {
   transition: all 100ms cubic-bezier(0, 0, 0.2, 1);
   min-width: 16px;
@@ -3650,9 +3567,6 @@ expander title > arrow:selected:disabled {
   color: rgba(255, 255, 255, 0.3);
 }
 
-/************
- * Calendar *
- ************/
 calendar {
   padding: 2px 6px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -3681,9 +3595,6 @@ calendar:indeterminate {
   color: rgba(255, 255, 255, 0.3);
 }
 
-/***********
- * Dialogs *
- ***********/
 messagedialog.background {
   background-color: rgba(68, 69, 75, 0.95);
   color: rgba(255, 255, 255, 0.8);
@@ -3863,9 +3774,6 @@ filechooserbutton:drop(active) {
   box-shadow: none;
 }
 
-/***********
- * Sidebar *
- ***********/
 stacksidebar .frame list:dir(ltr) {
   box-shadow: inset -2px 0 3px -3px rgba(0, 0, 0, 0.05), inset -3px 0 5px -3px rgba(0, 0, 0, 0.05), inset -3px 0 10px -3px rgba(0, 0, 0, 0.03);
 }
@@ -3910,9 +3818,6 @@ stacksidebar row > label {
   padding-right: 6px;
 }
 
-/****************
- * File chooser *
- ****************/
 .nautilus-window placessidebar row:selected button.sidebar-button {
   color: rgba(86, 87, 245, 0.75);
 }
@@ -4019,9 +3924,6 @@ placesview > actionbar > revealer > box > label {
   padding-right: 8px;
 }
 
-/*********
- * Paned *
- *********/
 paned > separator {
   min-width: 1px;
   min-height: 1px;
@@ -4078,9 +3980,6 @@ paned.vertical > separator.wide {
   background-position: bottom, top;
 }
 
-/**************
- * GtkInfoBar *
- **************/
 infobar {
   border: none;
 }
@@ -4105,9 +4004,6 @@ infobar.info > revealer > box, infobar.info:backdrop > revealer > box, infobar.q
   color: #FFFFFF;
 }
 
-/************
- * Tooltips *
- ************/
 tooltip {
   border-radius: 7px;
   box-shadow: none;
@@ -4135,9 +4031,6 @@ tooltip * {
   color: inherit;
 }
 
-/*****************
- * Color Chooser *
- *****************/
 colorswatch.top {
   border-top-left-radius: 5.5px;
   border-top-right-radius: 5.5px;
@@ -4247,16 +4140,10 @@ colorchooser .popover.osd:backdrop {
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 1px rgba(255, 255, 255, 0.1);
 }
 
-/********
- * Misc *
- ********/
 .content-view {
   background-color: #34343b;
 }
 
-/**********************
- * Window Decorations *
- **********************/
 decoration {
   transition: none;
   border-radius: 13px;
@@ -4303,9 +4190,6 @@ tooltip.csd decoration {
   background-color: #31313a;
 }
 
-/*****************
- * Title buttons *
- *****************/
 headerbar > box.right,
 headerbar > box.left,
 .titlebar > box.right,
@@ -4411,9 +4295,6 @@ popover.background .menuitem.button.flat:disabled:selected, row:disabled:selecte
   font-family: monospace;
 }
 
-/**********************
- * Touch Copy & Paste *
- **********************/
 cursor-handle {
   border-radius: 9999px;
   background-color: #7C4DFF;
@@ -4504,9 +4385,6 @@ stackswitcher > button:first-child, stackswitcher > button:last-child {
   border-radius: 7px;
 }
 
-/*********
- * Emoji *
- *********/
 popover.emoji-picker {
   padding: 0;
 }
@@ -4570,9 +4448,6 @@ button.emoji-section:last-child {
   font-size: larger;
 }
 
-/************
- * Nautilus *
- ************/
 .nautilus-window headerbar .path-bar-box button {
   border-radius: 9999px;
   color: rgba(255, 255, 255, 0.7);
@@ -4920,9 +4795,6 @@ dialog.background > box.dialog-vbox.vertical > grid.horizontal > box.horizontal:
   color: rgba(255, 255, 255, 0.5);
 }
 
-/*********
- * gedit *
- *********/
 .open-document-selector-path-label {
   color: rgba(255, 255, 255, 0.7);
   font-size: smaller;
@@ -5055,9 +4927,6 @@ paned.titlebar.horizontal headerbar {
   background: none;
 }
 
-/**********************
-  *  Gnome Tweak Tool  *
-  **********************/
 .tweak-categories {
   background-image: image(#44454b);
 }
@@ -5105,9 +4974,6 @@ row#workspaces-only-on-primary {
   margin-top: 4px;
 }
 
-/***********
- * Builder *
- ***********/
 layouttabbar {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background-color: #34343b;
@@ -5445,9 +5311,6 @@ popover.messagepopover list row:not(:last-child) {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/**********
- * Photos *
- **********/
 GdMainIconView.content-view {
   -GdMainIconView-icon-size: 48;
 }
@@ -5509,9 +5372,6 @@ overlay grid.horizontal > revealer > scrolledwindow.frame:dir(rtl) {
   border: none;
 }
 
-/*********
- * Music *
- *********/
 .side-panel:dir(ltr) {
   border-style: solid;
   border-color: rgba(255, 255, 255, 0.08);
@@ -5559,9 +5419,6 @@ box.vertical > revealer > toolbar.search-bar button > widget {
   -gtk-icon-source: -gtk-icontheme("pan-down-symbolic");
 }
 
-/*******************
- * Archive Manager *
- *******************/
 .background.csd > grid.horizontal > paned.horizontal > scrolledwindow {
   border-radius: 0 0 13px 13px;
   background-color: #31313a;
@@ -5580,9 +5437,6 @@ box.vertical > revealer > toolbar.search-bar button > widget {
   background-color: transparent;
 }
 
-/**************
- * Gnome-Logs *
- **************/
 headerbar > button.flat.popup.title-menu-button.toggle > grid .title {
   margin: -3px 0;
   padding: 2px 4px 0;
@@ -5657,9 +5511,6 @@ window.background > box.vertical box.horizontal > box.vertical > scrolledwindow 
   color: #FFFFFF;
 }
 
-/************************
-  * Gnome Control Center *
-  ************************/
 stack > box.vertical > widget > overlay grid.horizontal > stack > button.toggle {
   margin: 8px 6px;
 }
@@ -5752,9 +5603,6 @@ hdyleaflet > box.vertical > scrolledwindow > viewport.frame list:not(.view):not(
   color: #9e9ff9;
 }
 
-/************************
- * Gnome system monitor *
- ************************/
 window#gnome-system-monitor.background.csd > box.vertical > stack {
   background-color: #31313a;
   border-radius: 0 0 13px 13px;
@@ -5764,9 +5612,6 @@ window#gnome-system-monitor.background.csd > box.vertical > stack > box.vertical
   background: none;
 }
 
-/************************
- * Gnome sound recorder *
- ************************/
 stack > grid.vertical > scrolledwindow.frame {
   border: none;
 }
@@ -5779,9 +5624,6 @@ stack > grid.vertical scrolledwindow.frame.emptyGrid {
   border: none;
 }
 
-/******************
- * Gnome Contacts *
- ******************/
 window.background.csd > headerbar.titlebar.selection-mode > hdyleaflet > headerbar,
 window.background.csd > headerbar.titlebar.selection-mode > leaflet > headerbar {
   background-color: #1a5fb4;
@@ -5823,9 +5665,6 @@ window.background.csd > overlay > grid.horizontal .contacts-contact-form {
   border-bottom-right-radius: 13px;
 }
 
-/******************
-  * Gnome calender *
-  ******************/
 popover.background datechooser day.day.other-month {
   color: rgba(255, 255, 255, 0.12);
 }
@@ -5840,9 +5679,6 @@ popover.background datechooser label.weekday {
   font-weight: bold;
 }
 
-/****************
- * Gnome clocks *
- ****************/
 window.background.csd.unified {
   border-top-left-radius: 13px;
   border-top-right-radius: 13px;
@@ -5865,9 +5701,6 @@ window.background.csd.unified > deck > deck > deck > box.vertical > headerbar.ti
   border-radius: 0;
 }
 
-/****************
- * Gnome Weather *
- ****************/
 #weather-page,
 #weekly-forecast-frame {
   border-bottom-right-radius: 13px;
@@ -5878,9 +5711,6 @@ window.background.csd.unified > deck > deck > deck > box.vertical > headerbar.ti
   border-bottom-left-radius: 13px;
 }
 
-/*********
-  * To Do *
-  *********/
 taskrow {
   transition: all 100ms cubic-bezier(0, 0, 0.2, 1);
   margin: 0 -8px;
@@ -5902,9 +5732,6 @@ task-list-view > box > revealer > box > button {
   margin: -6px;
 }
 
-/*******
- * eog *
- *******/
 #eog-thumb-nav scrolledwindow {
   border-top: none;
 }
@@ -5913,17 +5740,11 @@ task-list-view > box > revealer > box > button {
   -gtk-outline-radius: 7px;
 }
 
-/***********
- * Fractal *
- ***********/
 .background.csd.main-window .sidebar.rooms-sidebar {
   border-bottom-left-radius: 13px;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/*************
- * Evolution *
- *************/
 frame.taskbar > border {
   border-style: solid none none;
 }
@@ -5932,16 +5753,10 @@ box.vertical > paned.horizontal notebook widget .frame {
   border-style: none;
 }
 
-/********
- * gitg *
- ********/
 frame.commit-frame > border {
   border-style: solid none none;
 }
 
-/**************
- * Characters *
- **************/
 box.dialog-vbox scrolledwindow.related {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -5950,9 +5765,6 @@ list.categories {
   background-image: image(#44454b);
 }
 
-/*********
- * Boxes *
- *********/
 .transparent-bg + stack overlay > label {
   min-height: 24px;
   padding: 0 4px;
@@ -5961,16 +5773,10 @@ list.categories {
   color: #FFFFFF;
 }
 
-/**************
- * Calculator *
- **************/
 button.title label {
   min-height: 36px;
 }
 
-/*********
- * Geary *
- *********/
 window.geary-main-window leaflet > separator,
 window#GearyMainWindow leaflet > separator {
   box-shadow: inset 0 48px #31313a;
@@ -6002,9 +5808,6 @@ window#GearyMainWindow stack#conversation_viewer scrolledwindow.geary-conversati
   border: none;
 }
 
-/************
- * Terminal *
- ************/
 window.background > box.vertical > box.horizontal > frame > border {
   border-width: 0 1px 0 0;
 }
@@ -6021,9 +5824,6 @@ window.background > box.vertical > box.horizontal > stack > widget > notebook.fr
   border-bottom-right-radius: 13px;
 }
 
-/**************
- * Extensions *
- **************/
 window.background.csd stack stack stack frame > border,
 window.background.csd > stack > stack > box > frame > border,
 window.background.csd > stack > stack > box > box > frame > border,
@@ -6038,9 +5838,6 @@ window.background.csd > stack > box > box > list {
   border-bottom-left-radius: 13px;
 }
 
-/***********
- * Dialogs *
- ***********/
 dialog.background.csd > box.dialog-vbox > grid.horizontal > scrolledwindow.frame > viewport.frame list:first-child {
   border-radius: 0 0 0 13px;
 }
@@ -6080,9 +5877,6 @@ dialog.background.csd > box.dialog-vbox stack scrolledwindow viewport.frame.view
   border-radius: 7px;
 }
 
-/******************
- * Unified window *
- ******************/
 window.background.csd.unified headerbar {
   box-shadow: inset 0 -1px rgba(255, 255, 255, 0.08);
 }
@@ -6196,9 +5990,6 @@ window.background.csd.unified.fullscreen > decoration-overlay {
   border: none;
 }
 
-/*********
- * Tilix *
- *********/
 .tilix-background {
   border-radius: 0;
 }
@@ -6286,9 +6077,6 @@ widget > box.terminal-titlebar > button.image-button, widget > box.terminal-titl
   min-width: 24px;
 }
 
-/***********
- * Eclipse *
- ***********/
 window.background > box.vertical > scrolledwindow > widget toolbar {
   padding: 2px;
 }
@@ -6302,16 +6090,10 @@ window.background > box.vertical > scrolledwindow > widget toolbar button {
   border-radius: 7px;
 }
 
-/************
- * Chromium *
- ************/
 tooltip.chromium {
   background-color: #31313a;
 }
 
-/***********
- * Firefox *
- ***********/
 window.background:not(.csd) > widget > separator {
   color: rgba(0, 0, 0, 0.2);
 }
@@ -6545,9 +6327,6 @@ window.background.chromium > menu > menuitem accelerator {
   color: rgba(255, 255, 255, 0.45);
 }
 
-/*************
-  * RhythmBox *
-  *************/
 .sidebar-paned .inline-toolbar.horizontal.sidebar-toolbar {
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
 }
@@ -6623,9 +6402,6 @@ window.background > box.vertical > toolbar.primary-toolbar toolitem button.flat.
   -gtk-outline-radius: 100px;
 }
 
-/***********
-  *  Geary  *
-  ***********/
 .sidebar.vertical > paned.geary-sidebar-pane-separator .geary-folder-frame > border, .sidebar.vertical > paned.sidebar-pane-separator .folder-frame > border {
   border-width: 0;
 }
@@ -6660,9 +6436,6 @@ popover.background list.geary-folder-popover-list row.activatable.geary-folder-p
   color: rgba(255, 255, 255, 0.3);
 }
 
-/************
- * Inkscape *
- ************/
 #ToolboxCommon > #AuxToolbox #StyleSwatch {
   font-size: smaller;
 }
@@ -6738,16 +6511,10 @@ popover.background list.geary-folder-popover-list row.activatable.geary-folder-p
   padding: 8px 4px;
 }
 
-/***********
- * Synapse *
- ***********/
 box.vertical > widget > widget:selected {
   background-color: #1a5fb4;
 }
 
-/***********
- *  xfce4  *
- ***********/
 .xfce4-panel button, .xfce4-panel button.flat {
   color: rgba(255, 255, 255, 0.7);
   border-radius: 0;
@@ -6916,9 +6683,6 @@ menubar.-vala-panel-background > menuitem:hover {
   border-radius: 0 0 0 0;
 }
 
-/*********
- * Unity *
- *********/
 UnityDecoration {
   -UnityDecoration-extents: 28px 0 0 0;
   -UnityDecoration-input-extents: 8px;
@@ -6996,9 +6760,6 @@ UnityPanelWidget:backdrop,
   color: #1a5fb4;
 }
 
-/**************
- * Mate-Panel *
- **************/
 .mate-panel-menu-bar menubar,
 #PanelApplet-window-menu-applet-button {
   background-color: transparent;
@@ -7217,9 +6978,6 @@ na-tray-applet {
   padding: 6px;
 }
 
-/*********************
- * CAJA File manager *
- *********************/
 .caja-navigation-window button.toggle.image-button {
   border-radius: 5px;
 }
@@ -7267,9 +7025,6 @@ na-tray-applet {
   font-weight: bold;
 }
 
-/*********
- * Pluma *
- *********/
 .pluma-window statusbar {
   margin: 0 -10px;
   padding: 0 4px;
@@ -7311,9 +7066,6 @@ na-tray-applet {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/*********
- * Atril *
- *********/
 .atril-window paned.horizontal box.vertical .frame {
   border-style: none;
 }
@@ -7322,7 +7074,6 @@ na-tray-applet {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* mate-screensaver lock dialog */
 .lock-dialog {
   border-radius: 5px;
   box-shadow: 0 10px 16px rgba(0, 0, 0, 0.25), 0 6px 10px rgba(0, 0, 0, 0.16), inset 0 1px rgba(255, 255, 255, 0.1);
@@ -7332,9 +7083,6 @@ na-tray-applet {
   border-style: none;
 }
 
-/******************
- * Budgie Desktop *
- ******************/
 box.vertical > stack > box.vertical .raven-background > viewport.frame list > row.activatable list row.activatable button.image-button {
   color: rgba(255, 255, 255, 0.7);
   background-color: transparent;
@@ -7909,7 +7657,6 @@ popover.background.places-menu row {
   border-image: radial-gradient(circle closest-corner at calc(100% - 1px) center, #7C4DFF 100%, transparent 0%) 0 3 0 0/0 3px 0 0;
 }
 
-
 button.flat.launcher {
   min-width: 16px;
   min-height: 16px;
@@ -7918,41 +7665,33 @@ button.flat.launcher {
   background-position: center center;
 }
 
-
 button.flat.launcher > image {
   opacity: 0.87;
 }
-
 
 button.flat.launcher:hover {
   -gtk-icon-effect: highlight;
 }
 
-
 button.flat.launcher:hover > image {
   opacity: 1.0;
 }
-
 
 button.flat.launcher:active > image {
   opacity: 1.0;
 }
 
-
 button.flat.launcher:checked {
   background-color: transparent;
 }
-
 
 button.flat.launcher:checked:hover {
   -gtk-icon-effect: highlight;
 }
 
-
 button.flat.launcher:checked > image {
   opacity: 1.0;
 }
-
 
 .unpinned button.flat.launcher:hover,
 .pinned button.flat.launcher.running:hover,
@@ -7960,14 +7699,12 @@ button.flat.launcher:checked > image {
   -gtk-icon-effect: highlight;
 }
 
-
 .unpinned button.flat.launcher > image,
 .pinned button.flat.launcher.running > image,
 .pinned button.launcher.running.sidebar-button > image {
   background-repeat: no-repeat;
   opacity: 1.0;
 }
-
 
 .unpinned button.flat.launcher:checked > image,
 .pinned button.flat.launcher.running:checked > image,
@@ -8616,9 +8353,6 @@ box.vertical > stack > box.vertical .raven-background > viewport.frame list > ro
   padding: 0 3px;
 }
 
-/************************
- * LightDM GTK+ Greeter *
- ************************/
 #panel_window {
   background-color: rgba(66, 66, 73, 0.85);
   color: #FFFFFF;
@@ -8677,73 +8411,49 @@ box.vertical > stack > box.vertical .raven-background > viewport.frame list > ro
   margin-top: -1px;
 }
 
-/* GTK NAMED COLORS
-   ----------------
-   use responsibly! */
-/*
-widget text/foreground color */
 @define-color theme_fg_color #FFFFFF;
-/*
-text color for entries, views and content in general */
+
 @define-color theme_text_color currentColor;
-/*
-widget base background color */
+
 @define-color theme_bg_color #34343b;
-/*
-text widgets and the like base background color */
+
 @define-color theme_base_color #31313a;
-/*
-base background color of selections */
+
 @define-color theme_selected_bg_color #1a5fb4;
-/*
-text/foreground color of selections */
+
 @define-color theme_selected_fg_color #FFFFFF;
-/*
-base background color of insensitive widgets */
+
 @define-color insensitive_bg_color #34343b;
-/*
-text foreground color of insensitive widgets */
+
 @define-color insensitive_fg_color alpha(currentColor, 0.5);
-/*
-insensitive text widgets and the like base background color */
+
 @define-color insensitive_base_color mix(#31313a,#34343b,0.5);
-/*
-widget text/foreground color on backdrop windows */
+
 @define-color theme_unfocused_fg_color #FFFFFF;
-/*
-text color for entries, views and content in general on backdrop windows */
+
 @define-color theme_unfocused_text_color currentColor;
-/*
-widget base background color on backdrop windows */
+
 @define-color theme_unfocused_bg_color #34343b;
-/*
-text widgets and the like base background color on backdrop windows */
+
 @define-color theme_unfocused_base_color #31313a;
-/*
-base background color of selections on backdrop windows */
+
 @define-color theme_unfocused_selected_bg_color #1a5fb4;
-/*
-text/foreground color of selections on backdrop windows */
+
 @define-color theme_unfocused_selected_fg_color #FFFFFF;
-/*
-insensitive color on backdrop windows */
+
 @define-color unfocused_insensitive_color alpha(currentColor, 0.5);
-/*
-widgets main borders color */
+
 @define-color borders alpha(currentColor, 0.12);
-/*
-widgets main borders color on backdrop windows */
+
 @define-color unfocused_borders alpha(currentColor, 0.12);
-/*
-these are pretty self explicative */
+
 @define-color warning_color #FF6D00;
 @define-color error_color #DD2C00;
 @define-color success_color #00C853;
-/*
-FIXME this is really an API */
+
 @define-color content_view_bg #31313a;
 @define-color placeholder_text_color #c1c1c4;
-/* Very contrasty background for text views (@theme_text_color foreground) */
+
 @define-color text_view_bg #232329;
 @define-color budgie_tasklist_indicator_color #7C4DFF;
 @define-color budgie_tasklist_indicator_color_active #7C4DFF;
@@ -8800,23 +8510,6 @@ FIXME this is really an API */
 @define-color BLACK_700 #33302F;
 @define-color BLACK_900 #2B2928;
 
-/* ---------------------------------------------------------------------
-   BorealOS: lightdm-gtk-greeter login card, matching the GUI installer's
-   #content-panel/#boreal-dialog look (rgba(10,26,36,0.92) fill, 10px
-   radius floating over the wallpaper) instead of leaving the greeter on
-   whatever the base GTK theme does for an unstyled window (opaque, square).
-   These are the REAL widget IDs lightdm-gtk-greeter's own greeter.ui sets
-   (via gtk_widget_set_name from Glade's object names), confirmed against
-   the upstream .glade source and multiple published greeter themes -
-   #login_window is the top-level, #login_box is the actual visible card
-   one level in. An earlier version of this file guessed generic node
-   names ("frame", "eventbox") that don't exist anywhere in this widget
-   tree and matched nothing at all.
-   Actual corner transparency (not just paint clipping) still requires the
-   compositor started by boreal-greeter-compositor via lightdm's
-   display-setup-script - this CSS alone only clips content inside the
-   radius and paints the glass fill, same as everywhere else in the OS.
---------------------------------------------------------------------- */
 #login_window {
   background-color: transparent;
   border-style: none;
@@ -8840,10 +8533,6 @@ FIXME this is really an API */
   color: #e8f7f4;
 }
 
-/* Hide the large user avatar - #user_image is the picture itself,
-   #user_image_border is the frame/ring drawn around it in greeter.ui.
-   Collapsing both to zero size removes it without touching the rest of
-   the login_box layout (username dropdown, password field, Log In). */
 #user_image,
 #user_image_border {
   min-width: 0;
@@ -8854,13 +8543,6 @@ FIXME this is really an API */
   border-style: none;
 }
 
-/* Greeter's own top bar (#panel_window - the bar showing the clock,
-   a11y/session icons, etc. at the top of the screen). Same treatment as
-   the XFCE session's top panel and for the same reason: no border-radius
-   (it's a full-width top-level bar, nothing to round), single bottom
-   separator instead of a full border, and the same 0.92 opacity as
-   #login_box so both read as the same glass material rather than two
-   different panels. */
 #panel_window {
   background-color: rgba(10, 26, 36, 0.92);
   border-radius: 0;

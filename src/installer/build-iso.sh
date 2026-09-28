@@ -25,6 +25,46 @@ warn() { echo -e "${RED}WARN: $1${RST}"; }
 
 source "$SCRIPT_DIR/desktop/xfce.sh"
 
+# ── Guarantee no display manager autostarts in the LIVE env ────────────────
+# The live boot must land on the tty1 menu (/etc/profile.d/boreal-live.sh),
+# never on a greeter. Package postinsts can (re)register a DM through any of
+# three mechanisms, so we sweep all of them last, right before packing the
+# squashfs, and fail the build if anything is left. The DM *package* stays
+# installed; installer.sh enables it on the target.
+enforce_no_live_dm() {
+    local root="$1" dm f init_target left
+    echo "==> Verifying no display manager autostarts in the live env..."
+
+    for dm in lightdm sddm gdm gdm3 xdm wdm slim nodm; do
+        # OpenRC runlevel links + SysV rc?.d links
+        while IFS= read -r -d '' f; do
+            warn "DM autostart found, removing: ${f#"$root"}"
+            rm -f "$f"
+        done < <(find "$root/etc/runlevels" "$root"/etc/rc[0-6S].d \
+                    -name "*${dm}*" \( -type l -o -type f \) -print0 2>/dev/null)
+    done
+
+    # systemd: only matters if a package swapped /sbin/init, but if it did,
+    # this is the link that would start the greeter regardless of runlevels.
+    find "$root/etc/systemd/system" -name 'display-manager.service' \
+        \( -type l -o -type f \) -print -delete 2>/dev/null | sed "s|^$root|  removed: |"
+    rm -f "$root/etc/X11/default-display-manager"
+
+    # /sbin/init must still be OpenRC/sysvinit. Plain readlink on purpose:
+    # readlink -f would resolve absolute links against the HOST filesystem.
+    init_target="$(readlink "$root/sbin/init" 2>/dev/null || true)"
+    case "$init_target" in
+        *systemd*) die "/sbin/init -> $init_target: a package pulled in systemd-sysv and replaced the OpenRC/sysvinit init. The live env would boot systemd and start the DM." ;;
+    esac
+
+    left="$(find "$root/etc/runlevels" "$root"/etc/rc[0-6S].d \
+                \( -name '*lightdm*' -o -name '*sddm*' -o -name '*gdm*' -o -name '*xdm*' \
+                   -o -name '*wdm*' -o -name '*slim*' -o -name '*nodm*' \) \
+                \( -type l -o -type f \) 2>/dev/null)"
+    [ -z "$left" ] || die "Display manager still enabled in live env: $left"
+    ok "No display manager autostart in the live env."
+}
+
 _self_check_heredocs() {
     python3 - "$1" << 'SELFCHECK'
 import re, sys
@@ -944,6 +984,8 @@ find "$WORK/squashfs-root/usr/share/locale" -mindepth 1 -maxdepth 1 -type d -not
 find "$WORK/squashfs-root/usr/share/locale-langpack" -mindepth 1 -maxdepth 1 -type d -not -name 'en*' -exec rm -rf {} + 2>/dev/null || true
 find "$WORK/squashfs-root/var/log" -type f -delete 2>/dev/null || true
 find "$WORK/squashfs-root/var/cache" -maxdepth 1 -type d -not -name apt -exec rm -rf {} + 2>/dev/null || true
+
+enforce_no_live_dm "$WORK/squashfs-root"
 
 echo "==> Building SquashFS..."
 if [ "$DE_NAME" = "$XFCE_NAME" ]; then
