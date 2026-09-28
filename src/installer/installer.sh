@@ -491,7 +491,7 @@ ID=borealos
 ID_LIKE=
 VERSION="0.0.2"
 VERSION_ID="0.0.2"
-HOME_URL="https://borealos.org"
+HOME_URL="https://boreal-project.github.io"
 OS
 cat > /etc/lsb-release <<LSB
 DISTRIB_ID=BorealOS
