@@ -10,24 +10,102 @@ WORK="$SCRIPT_DIR/iso-work"
 OUTPUT="$SCRIPT_DIR/borealOS.iso"
 ROOTFS_TAR="$SCRIPT_DIR/borealOS-rootfs.tar.gz"
 INSTALLER_SH="$SCRIPT_DIR/installer.sh"
+RICE_DIR="$SCRIPT_DIR/../rice"
 WALLPAPER_DEFAULT="$SCRIPT_DIR/background_main.png"
 WALLPAPER_ALT="$SCRIPT_DIR/background_one.png"
-WALLPAPER_MAIN="$SCRIPT_DIR/background_main.png"
+# default-wallpaper.jpg's exact location wasn't fully certain, so this
+# checks the plausible spots instead of a single hardcoded guess - and
+# reports exactly which one it found further down, so a wrong guess is
+# loud instead of silently shipping a build without the real wallpaper.
+WALLPAPER_MAIN=""
+for _candidate in \
+    "$RICE_DIR/default-wallpaper.jpg" \
+    "$SCRIPT_DIR/../src/rice/default-wallpaper.jpg" \
+    "$SCRIPT_DIR/rice/default-wallpaper.jpg" \
+    "$SCRIPT_DIR/../default-wallpaper.jpg" \
+    "$SCRIPT_DIR/default-wallpaper.jpg"; do
+    if [ -f "$_candidate" ]; then
+        WALLPAPER_MAIN="$_candidate"
+        break
+    fi
+done
+[ -n "$WALLPAPER_MAIN" ] || WALLPAPER_MAIN="$RICE_DIR/default-wallpaper.jpg"
 WALLPAPER_BG2="$SCRIPT_DIR/background_2.png"
+WALLPAPER_GRUB="$SCRIPT_DIR/background_grub.png"
 LOGO="$SCRIPT_DIR/logo.png"
 GHOST_LOGO="$SCRIPT_DIR/borealos-ghost-logo.png"
 BANNER="$SCRIPT_DIR/borealOS-text-and-logo-transparent.png"
 BRANDING_ZIP="$SCRIPT_DIR/borealOS-branding.zip"
-RICE_DIR="$SCRIPT_DIR/../rice"
 
 RED='\033[0;31m'; GRN='\033[0;32m'; CYN='\033[0;36m'; BLD='\033[1m'; RST='\033[0m'
 die()  { echo -e "${RED}ERROR: $1${RST}" >&2; exit 1; }
 ok()   { echo -e "${GRN}$1${RST}"; }
 warn() { echo -e "${RED}WARN: $1${RST}"; }
 
+# Self-check: a backtick (or bare $()) anywhere inside an UNQUOTED heredoc in
+# this file - including inside a "#" comment - gets executed for real by
+# THIS script's own shell at heredoc-construction time, on the real host,
+# before the text ever reaches a chroot. This has caused a real
+# `apt-get autoremove --purge` to run on the host and corrupt a chroot
+# script with its spliced-in output. Refuse to run if this pattern
+# reappears, instead of silently repeating that bug.
+_self_check_heredocs() {
+    python3 - "$1" << 'SELFCHECK'
+import re, sys
+path = sys.argv[1]
+with open(path) as f:
+    lines = f.readlines()
+i = 0
+bad = []
+while i < len(lines):
+    m = re.search(r"<<-?\s*(['\"]?)(\w+)\1\s*(?:\|\|.*)?$", lines[i])
+    if m and m.group(1) == '':
+        tag = m.group(2)
+        j = i + 1
+        while j < len(lines) and lines[j].rstrip('\n') != tag:
+            if '`' in lines[j]:
+                bad.append((j + 1, lines[j].rstrip()))
+            j += 1
+    i += 1
+if bad:
+    print("SELF-CHECK FAILED: backtick(s) inside an unquoted heredoc:")
+    for ln, txt in bad:
+        print(f"  line {ln}: {txt}")
+    sys.exit(1)
+sys.exit(0)
+SELFCHECK
+}
+_self_check_heredocs "${BASH_SOURCE[0]}" || die "This script contains a backtick inside an unquoted heredoc (see above) - this WILL execute on your host instead of staying inert. Fix it before running."
+
+# /dev, /proc, /sys get bind-mounted into $WORK/squashfs-root for chroot use
+# further down. If the script dies (or is Ctrl-C'd) anywhere after that and
+# before the matching umount, those bind mounts are left dangling on disk.
+# The *next* run's `rm -rf "$WORK"` then tries to unlink files through a
+# live /proc mount and fails with "Operation not permitted" (procfs/sysfs
+# refuse most unlinks regardless of permissions) - it looks like a
+# permissions bug but it's actually just leftover mounts from the crash.
+# This trap makes sure they're always cleaned up, on success OR failure.
+cleanup_mounts() {
+    for m in dev proc sys; do
+        mountpoint -q "$WORK/squashfs-root/$m" 2>/dev/null && umount -l "$WORK/squashfs-root/$m" 2>/dev/null || true
+    done
+}
+trap cleanup_mounts EXIT
+
+# Defensive: also clean up anything left mounted by a previous run that
+# crashed before this trap existed, or that was killed with SIGKILL (which
+# no trap can catch).
+cleanup_mounts
+
 for f in "$ROOTFS_TAR" "$INSTALLER_SH" "$WALLPAPER_DEFAULT" "$WALLPAPER_BG2" "$LOGO" "$BANNER"; do
     [ -f "$f" ] || die "Missing: $f"
 done
+if [ -f "$WALLPAPER_MAIN" ]; then
+    echo "==> Using $WALLPAPER_MAIN as the primary desktop wallpaper."
+else
+    die "Could not find default-wallpaper.jpg in any of the checked locations (tried: $RICE_DIR/default-wallpaper.jpg, $SCRIPT_DIR/../src/rice/default-wallpaper.jpg, $SCRIPT_DIR/rice/default-wallpaper.jpg, $SCRIPT_DIR/../default-wallpaper.jpg, $SCRIPT_DIR/default-wallpaper.jpg). Tell me its real path and I'll fix the lookup instead of guessing again."
+fi
+[ -f "$WALLPAPER_GRUB" ] || warn "Missing $WALLPAPER_GRUB - GRUB will fall back to $WALLPAPER_DEFAULT."
 [ "$EUID" -eq 0 ] || die "Run as root."
 
 command -v xorriso       >/dev/null || apt-get install -y xorriso        || die "Failed to install xorriso"
@@ -53,7 +131,7 @@ while true; do
     read -r de_choice
     case "$de_choice" in
         1) DE_PKGS="kde-plasma-desktop"; DM_PKGS="sddm"; DE_NAME="KDE Plasma"; DE_START="startplasma-x11"; break ;;
-        2) DE_PKGS="xfce4 xfce4-goodies gvfs gvfs-backends tumbler tumbler-plugins-extra xfce4-whiskermenu-plugin xfce4-pulseaudio-plugin xfce4-power-manager xfce4-power-manager-plugins pavucontrol"; DE_EXTRA_PKGS="fonts-ibm-plex papirus-icon-theme materia-gtk-theme gtk2-engines-murrine adwaita-icon-theme"; DM_PKGS="lightdm lightdm-gtk-greeter"; DE_NAME="XFCE"; DE_START="startxfce4"; break ;;
+        2) DE_PKGS="xfce4 xfce4-goodies gvfs gvfs-backends tumbler tumbler-plugins-extra xfce4-whiskermenu-plugin xfce4-pulseaudio-plugin xfce4-power-manager xfce4-power-manager-plugins pavucontrol"; DE_EXTRA_PKGS="fonts-ibm-plex papirus-icon-theme adwaita-icon-theme"; DM_PKGS="lightdm lightdm-gtk-greeter xcompmgr"; DE_NAME="XFCE"; DE_START="startxfce4"; break ;;
         3) DE_PKGS="foot"; DM_PKGS=""; DE_NAME="Niri"; DE_START="niri-session"; break ;;
         4) DE_PKGS=""; DM_PKGS=""; DE_NAME="None"; DE_START=""; break ;;
         *) echo -e "${RED}Invalid.${RST}" ;;
@@ -107,6 +185,7 @@ cp "$ROOTFS_TAR"        "$WORK/squashfs-root/opt/borealOS/rootfs.tar.gz" || die 
 cp "$WALLPAPER_DEFAULT" "$WORK/squashfs-root/opt/borealOS/background_main.png"
 cp "$WALLPAPER_BG2"     "$WORK/squashfs-root/opt/borealOS/background_2.png"
 cp "$WALLPAPER_ALT"     "$WORK/squashfs-root/opt/borealOS/background_one.png"
+[ -f "$WALLPAPER_GRUB" ] && cp "$WALLPAPER_GRUB" "$WORK/squashfs-root/opt/borealOS/background_grub.png"
 cp "$LOGO"              "$WORK/squashfs-root/opt/borealOS/logo.png"
 [ -f "$GHOST_LOGO" ] && cp "$GHOST_LOGO" "$WORK/squashfs-root/opt/borealOS/logo-ghost.png"
 cp "$BANNER"            "$WORK/squashfs-root/opt/borealOS/banner.png"
@@ -120,13 +199,50 @@ if [ -d "$RICE_DIR/lightdm" ]; then
 else
     warn "No rice/lightdm/ found - using defaults"
 fi
+
+# Compositor for the greeter's X session (see 01_debian.conf's
+# display-setup-script). Without this, the greeter's rounded/transparent
+# corners render as solid black — GTK's border-radius clips paint inside a
+# still-square X11 window, it doesn't punch a real hole without a compositor.
+mkdir -p "$WORK/squashfs-root/usr/local/bin"
+cat > "$WORK/squashfs-root/usr/local/bin/boreal-greeter-compositor" <<'GREETERCOMP'
+#!/bin/sh
+# Runs as root via lightdm's display-setup-script, on the greeter's own X
+# display, before the greeter connects. xcompmgr is a deliberately minimal
+# choice here (no config file, no window-manager duties, single purpose:
+# real ARGB compositing) since the greeter has no WM of its own to host one.
+command -v xcompmgr >/dev/null 2>&1 || exit 0
+DISPLAY="${DISPLAY:-:0}" xcompmgr -a -n &
+GREETERCOMP
+chmod 755 "$WORK/squashfs-root/usr/local/bin/boreal-greeter-compositor"
+
 echo "$DE_START"  > "$WORK/squashfs-root/opt/borealOS/de-start"
 echo "$SHELL_BIN" > "$WORK/squashfs-root/opt/borealOS/shell"
+# So it's possible to tell, from a booted ISO, exactly which build-iso.sh run
+# produced it (and which boreal-installer.c it compiled) - useful for
+# confirming you're not testing a stale ISO after a fix. Logged by the
+# installer at startup.
+{
+    echo "built: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+    echo "build-iso.sh sha256: $(sha256sum "$0" 2>/dev/null | cut -d' ' -f1)"
+    [ -f "$SCRIPT_DIR/gui-installer/boreal-installer.c" ] && echo "boreal-installer.c sha256: $(sha256sum "$SCRIPT_DIR/gui-installer/boreal-installer.c" 2>/dev/null | cut -d' ' -f1)"
+} > "$WORK/squashfs-root/opt/borealOS/build-info" 2>/dev/null || true
 
 echo "==> Setting up BorealOS artwork..."
 mkdir -p "$WORK/squashfs-root/usr/share/boreal-artwork"
-# background_main.png is the primary wallpaper for installed system + live XFCE session
+# WALLPAPER_MAIN (rice/default-wallpaper.jpg) is the primary wallpaper for
+# the installed system + live XFCE session + lightdm greeter background.
+# It ships at a much higher resolution than any real display needs (source
+# is 9504x6336 - a print/poster-sized master, not a screen asset), so it's
+# downscaled once here to a sane desktop-wallpaper ceiling instead of
+# copying that multi-megabyte file to every destination below verbatim.
 WP_MAIN="${WALLPAPER_MAIN:-$WALLPAPER_DEFAULT}"
+WP_MAIN_SCALED="$WORK/wallpaper-default-scaled.png"
+if convert "$WP_MAIN" -resize '3840x2160>' "$WP_MAIN_SCALED" 2>/dev/null; then
+    WP_MAIN="$WP_MAIN_SCALED"
+else
+    warn "Could not downscale $WALLPAPER_MAIN with imagemagick - shipping it at native resolution."
+fi
 cp "$WP_MAIN"           "$WORK/squashfs-root/usr/share/boreal-artwork/wallpaper-default.png"
 cp "$WALLPAPER_DEFAULT" "$WORK/squashfs-root/usr/share/boreal-artwork/wallpaper-waves.png"
 cp "$WALLPAPER_ALT"     "$WORK/squashfs-root/usr/share/boreal-artwork/wallpaper-alt.png"
@@ -136,81 +252,22 @@ cp "$BANNER"            "$WORK/squashfs-root/usr/share/boreal-artwork/banner.png
 chmod 755 "$WORK/squashfs-root/usr/share/boreal-artwork"
 chmod 644 "$WORK/squashfs-root/usr/share/boreal-artwork/"*.png
 
-echo "==> Creating GRUB theme..."
-GRUB_THEME_DIR="$WORK/squashfs-root/usr/share/grub/themes/boreal"
-mkdir -p "$GRUB_THEME_DIR"
-convert "$WALLPAPER_DEFAULT" -resize 1920x1080! \
-    "$GRUB_THEME_DIR/background.png" 2>/dev/null || \
-    cp "$WALLPAPER_DEFAULT" "$GRUB_THEME_DIR/background.png"
-convert "$BANNER" -trim -resize 520x -background none \
-    "$GRUB_THEME_DIR/title.png" 2>/dev/null || \
-    cp "$BANNER" "$GRUB_THEME_DIR/title.png"
+# Both installers (installer.sh and boreal-installer.c) re-copy artwork
+# from /opt/borealOS/ into the target's /usr/share/boreal-artwork/ during
+# install, as a repair step in case an earlier install stage clobbered
+# something - that step was copying from background_main.png/background_2.png
+# (whatever the OLD default wallpaper source used to be, before
+# WALLPAPER_MAIN was switched to the rice's default-wallpaper.jpg), because
+# the actual correctly-scaled wallpaper was never staged into /opt/borealOS
+# under any name for it to copy FROM. That's the real reason the desktop
+# wallpaper never reflected any wallpaper-logic fix on an installed
+# system, on EITHER installer, regardless of how correct the xfconf-side
+# fix was - the installer was overwriting the right file with a
+# completely different, wrong one immediately after. Staging the same
+# already-scaled WP_MAIN here under a stable name gives both installers a
+# correct source to copy from.
+cp "$WP_MAIN" "$WORK/squashfs-root/opt/borealOS/default-wallpaper.png"
 
-# Selection-highlight bar. GRUB's pixmap_style only requires the "_c" (center)
-# slice to be present — missing edge slices are silently skipped, so a single
-# flat image is a stable, supported highlight box (not a 9-slice gimmick).
-SELECT_IMG="$SCRIPT_DIR/select.png"
-if [ -f "$SELECT_IMG" ]; then
-    cp "$SELECT_IMG" "$GRUB_THEME_DIR/select_c.png"
-fi
-
-# Compute the actual rendered height of title.png so the theme never has to
-# guess at an aspect ratio (this was the source of the previous oval/egg warp).
-TITLE_H=$(identify -format "%h" "$GRUB_THEME_DIR/title.png" 2>/dev/null || echo 197)
-
-cat > "$GRUB_THEME_DIR/theme.txt" <<THEME
-desktop-image: "background.png"
-desktop-color: "#51b2bb"
-title-text: ""
-message-font: "DejaVu Sans Regular 14"
-message-color: "#4dffd2"
-terminal-width: "80%"
-terminal-height: "70%"
-terminal-left: "10%"
-terminal-top: "15%"
-
-+ image {
-    top = 6%
-    left = 50%-260
-    width = 520
-    height = ${TITLE_H}
-    file = "title.png"
-}
-
-+ boot_menu {
-    top = 46%
-    left = 50%-200
-    width = 400
-    height = 36%
-    item_font = "DejaVu Sans Bold 16"
-    item_color = "#d0f5f0"
-    selected_item_color = "#0d1f2d"
-    item_height = 42
-    item_padding = 14
-    item_spacing = 4
-    icon_width = 0
-    icon_height = 0
-    scrollbar = false
-THEME
-if [ -f "$GRUB_THEME_DIR/select_c.png" ]; then
-    cat >> "$GRUB_THEME_DIR/theme.txt" <<THEME
-    selected_item_pixmap_style = "select_*.png"
-THEME
-fi
-cat >> "$GRUB_THEME_DIR/theme.txt" <<THEME
-}
-
-+ label {
-    top = 91%
-    left = 0
-    width = 100%
-    align = "center"
-    font = "DejaVu Sans Regular 13"
-    color = "#4dffd2"
-    text = "up/down: navigate    enter: boot    e: edit    c: console"
-}
-THEME
-ok "GRUB theme generated (stable, single source of truth, no regex patching)."
 
 echo "==> Writing xorg config..."
 mkdir -p "$WORK/squashfs-root/etc/X11/xorg.conf.d"
@@ -322,11 +379,31 @@ xfce_copy_to() {
         cp -r "$XFCE_RICE/xfconf/." "$DEST/.config/xfce4/xfconf/"
         echo "  xfce rice: xfconf → .config/xfce4/xfconf"
     fi
+
+    # gtk-3.0/gtk.css → .config/gtk-3.0/gtk.css
+    # Per-user override that rounds the floating panel (xfce4-panel has no
+    # native corner-radius/margin property, so this is done in CSS instead).
+    if [ -f "$XFCE_RICE/gtk-3.0/gtk.css" ]; then
+        mkdir -p "$DEST/.config/gtk-3.0"
+        cp "$XFCE_RICE/gtk-3.0/gtk.css" "$DEST/.config/gtk-3.0/gtk.css"
+        echo "  xfce rice: gtk.css → .config/gtk-3.0/gtk.css"
+    fi
 }
 
 # 1. Apply to /etc/skel so every new user on the installed system gets the rice
 xfce_copy_to "$SKEL"
 ok "XFCE rice applied to skel."
+
+# 2. Install the bundled BorealOS-Dark theme (gtk-2.0/gtk-3.0/xfwm4) system-wide.
+# This is shipped in the repo (src/rice/theme/) rather than pulled from apt,
+# so it doesn't depend on a specific Debian package existing/being current.
+if [ -d "$RICE_DIR/theme/BorealOS-Dark" ]; then
+    mkdir -p "$WORK/squashfs-root/usr/share/themes"
+    cp -r "$RICE_DIR/theme/BorealOS-Dark" "$WORK/squashfs-root/usr/share/themes/BorealOS-Dark"
+    ok "BorealOS-Dark theme installed to /usr/share/themes."
+else
+    warn "No rice/theme/BorealOS-Dark found - xfwm4/xsettings will reference a theme that doesn't exist, falling back to system default at runtime."
+fi
 fi
 
 echo "==> Applying BorealOS XFCE branding..."
@@ -355,31 +432,118 @@ done
 mkdir -p "$WORK/squashfs-root/usr/local/bin"
 cat > "$WORK/squashfs-root/usr/local/bin/boreal-apply-theme.sh" <<'THEMESCRIPT'
 #!/bin/sh
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    command -v xfconf-query >/dev/null 2>&1 && xfconf-query -c xfwm4 -p /general -l >/dev/null 2>&1 && break
-    sleep 1
-done
+# Run-once guard: this used to run at every single login via autostart,
+# reapplying theme/wallpaper/panel settings every time even though
+# nothing about them changes after the first run. That's not just
+# wasteful - it's what silently kept re-forcing xfwm4's compositor back
+# on after the static config disabled it, undoing that fix at every
+# session start. First login per user only, from here on: a marker file
+# in that user's own config dir. Delete the marker to force a reapply
+# (useful for testing/development) - nothing else needs to change to do
+# that, no toggle or flag required.
+MARKER="$HOME/.config/.boreal-theme-applied"
+[ -f "$MARKER" ] && exit 0
+mkdir -p "$HOME/.config"
 
+# Wait for xfconfd itself (not just "some channel has some property"),
+# and separately wait for xfdesktop to actually be running before writing
+# to its channel. xfwm4's channel already has properties from packaging,
+# so polling it proves nothing about whether xfdesktop/xfce4-desktop is
+# up yet — that was the actual reason wallpaper writes used to silently
+# no-op: they landed on a channel nothing was listening on.
 set_prop() {
     xfconf-query -c "$1" -p "$2" -n -t "$3" -s "$4" 2>/dev/null \
         || xfconf-query -c "$1" -p "$2" -t "$3" -s "$4" 2>/dev/null
 }
 
-set_prop xsettings /Net/ThemeName string Materia-light
-set_prop xsettings /Net/IconThemeName string Papirus
+wait_for() {
+    # $1 = command to check readiness of (pgrep name), $2 = seconds to wait
+    i=0
+    while [ "$i" -lt "$2" ]; do
+        pgrep -x "$1" >/dev/null 2>&1 && return 0
+        sleep 1
+        i=$((i + 1))
+    done
+    return 1
+}
+
+command -v xfconf-query >/dev/null 2>&1 || exit 0
+wait_for xfconfd 15 || exit 0
+
+set_prop xsettings /Net/ThemeName string BorealOS-Dark
+set_prop xsettings /Net/IconThemeName string Papirus-Dark
 set_prop xsettings /Net/DoubleClickTime int 400
 set_prop xsettings /Gtk/CursorThemeName string Adwaita
+set_prop xsettings /Gtk/CursorThemeSize int 24
 set_prop xsettings /Gtk/FontName string "IBM Plex Sans 10"
 set_prop xsettings /Gtk/MonospaceFontName string "IBM Plex Mono 10"
 
-set_prop xfwm4 /general/theme string Materia-light
-set_prop xfwm4 /general/title_font string "IBM Plex Sans Bold 10"
+set_prop xfwm4 /general/theme string BorealOS-Dark
+set_prop xfwm4 /general/title_font string "IBM Plex Sans Bold 9"
 set_prop xfwm4 /general/double_click_action string maximize
 set_prop xfwm4 /general/click_to_focus bool true
+# use_compositing is deliberately NOT set here (and left at false, from
+# the static xfwm4.xml). It used to be force-set to true right here, on
+# every login - which silently re-enabled xfwm4's own built-in compositor
+# after the static config had disabled it, undoing that fix at every
+# single session start and racing/conflicting with the xcompmgr autostart
+# entry that's supposed to be the ONLY compositor. That's the actual
+# reason xcompmgr showed up as running (pgrep) but never successfully
+# registered as the compositing manager (xprop -root _NET_WM_CM_S0 came
+# back "not found") - xfwm4 was still fighting it for the role.
+# vblank_mode defaults to "xpresent" or "glx" depending on build, both of
+# which silently do nothing on drivers that lack the Present/GLX extension
+# (common in plain VM framebuffer drivers with no 3D acceleration) -
+# xfwm4's compositor then just never actually composites, so
+# use_compositing=true alone doesn't guarantee it's working. "off" is the
+# one mode that doesn't depend on either extension and is the standard
+# recommendation for exactly this failure mode. Kept here as a defensive
+# no-op in case xfwm4's own compositor is ever intentionally re-enabled
+# later, even though nothing currently turns it back on.
+set_prop xfwm4 /general/vblank_mode string off
+set_prop xfwm4 /general/frame_opacity int 100
+set_prop xfwm4 /general/show_frame_shadow bool true
 
 set_prop xfce4-session /general/SaveOnExit bool false
 set_prop xfce4-session /general/LockScreen string xflock4
 set_prop xfce4-session /shutdown/ShowOnLogout bool true
+
+# --- Wallpaper -----------------------------------------------------------
+# Deliberately minimal: only set which image is displayed, nothing about
+# the "Folder:" picker's browsing location. That folder property is a
+# separate, cosmetic setting read by xfce4-desktop-settings' own picker
+# widget (a GtkFileChooserButton-style control with its own internal
+# "current folder" state) - writing it externally via xfconf-query changes
+# the label the picker shows, but doesn't go through the normal widget
+# code path that actually initializes that control's backing folder
+# reference, which is what produced "Unable to load Images from folder
+# '(null)'" when the picker was then browsed. last-image (the property
+# that actually controls what's displayed) has no such entanglement and
+# doesn't need a folder to be set anywhere for it to work. Leaving the
+# folder alone lets XFCE's own default apply there instead, so the picker
+# just works normally, and this only touches what's actually displayed.
+#
+# Same reasoning as the wallpaper rewrite above: wait for xfdesktop to
+# create its own real backdrop entries, then adjust what's already there.
+WALLPAPER=/usr/share/boreal-artwork/wallpaper-default.png
+if [ -f "$WALLPAPER" ]; then
+    MONITORS=""
+    for i in $(seq 1 20); do
+        MONITORS=$(xfconf-query -c xfce4-desktop -p /backdrop/screen0 -l 2>/dev/null \
+            | grep -oE '/backdrop/screen0/[^/]+' | sed 's#.*/##' | sort -u)
+        [ -n "$MONITORS" ] && break
+        sleep 1
+    done
+    if [ -n "$MONITORS" ]; then
+        for mon in $MONITORS; do
+            set_prop xfce4-desktop "/backdrop/screen0/${mon}/workspace0/last-image" string "$WALLPAPER"
+            set_prop xfce4-desktop "/backdrop/screen0/${mon}/workspace0/image-style" int 5
+            set_prop xfce4-desktop "/backdrop/screen0/${mon}/last-single-image" string "$WALLPAPER"
+            set_prop xfce4-desktop "/backdrop/screen0/${mon}/image-show" bool true
+        done
+        command -v xfdesktop >/dev/null 2>&1 && xfdesktop --reload 2>/dev/null || true
+    fi
+fi
 
 EXISTING_TYPES=$(for id in $(xfconf-query -c xfce4-panel -p /plugins -l 2>/dev/null | grep -oE 'plugin-[0-9]+'); do
     xfconf-query -c xfce4-panel -p "/plugins/$id" 2>/dev/null
@@ -395,6 +559,11 @@ for id in $IDS; do
         set_prop xfce4-panel "/plugins/${id}/button-icon" string /usr/share/pixmaps/boreal-logo-ghost.png
     fi
 done
+
+# Everything above completed without exiting early, so mark this user as
+# done - next login's autostart run hits the guard at the top and exits
+# immediately instead of redoing any of this.
+touch "$MARKER"
 THEMESCRIPT
 chmod 755 "$WORK/squashfs-root/usr/local/bin/boreal-apply-theme.sh"
 
@@ -411,6 +580,29 @@ StartupNotify=false
 THEMEAUTOSTART
 cp "$WORK/squashfs-root/etc/skel/.config/autostart/boreal-apply-theme.desktop" \
    "$WORK/squashfs-root/root/.config/autostart/boreal-apply-theme.desktop"
+
+# xcompmgr for the XFCE session itself, not just the greeter. xfwm4 ships
+# its own built-in compositor (toggled via use_compositing), but that's a
+# completely different code path from the xcompmgr already used for
+# lightdm's greeter via display-setup-script - and only the greeter's
+# xcompmgr has actually been confirmed working. use_compositing is now set
+# to false in xfwm4.xml so its own compositor doesn't run alongside this
+# one (two compositors fighting over the same display is a real, separate
+# problem to avoid), and this autostart entry gives the XFCE session the
+# exact same compositor setup already proven to work for the greeter,
+# instead of a second, unconfirmed one.
+cat > "$WORK/squashfs-root/etc/skel/.config/autostart/boreal-compositor.desktop" <<'COMPAUTOSTART'
+[Desktop Entry]
+Type=Application
+Name=BorealOS Compositor
+Exec=xcompmgr -a -n
+Hidden=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+StartupNotify=false
+COMPAUTOSTART
+cp "$WORK/squashfs-root/etc/skel/.config/autostart/boreal-compositor.desktop" \
+   "$WORK/squashfs-root/root/.config/autostart/boreal-compositor.desktop"
 
 # TTY install wrapper — runs the terminal installer
 cat > "$WORK/squashfs-root/usr/local/bin/boreal-tty-install" <<'TTYINSTALL'
@@ -469,21 +661,21 @@ ok "BorealOS XFCE branding applied."
 echo "==> Applying branding..."
 cat > "$WORK/squashfs-root/etc/os-release" <<OS
 NAME="BorealOS"
-PRETTY_NAME="BorealOS alpha"
+PRETTY_NAME="BorealOS 0.0.2"
 ID=borealos
 ID_LIKE=
-VERSION="1.0"
-VERSION_ID="1.0"
+VERSION="0.0.2"
+VERSION_ID="0.0.2"
 HOME_URL="https://borealos.org"
 OS
 cat > "$WORK/squashfs-root/etc/lsb-release" <<LSB
 DISTRIB_ID=BorealOS
-DISTRIB_RELEASE=alpha
+DISTRIB_RELEASE=0.0.2
 DISTRIB_CODENAME=boreal
-DISTRIB_DESCRIPTION="BorealOS alpha"
+DISTRIB_DESCRIPTION="BorealOS 0.0.2"
 LSB
 echo "BorealOS"      > "$WORK/squashfs-root/etc/issue"
-echo "BorealOS alpha"  > "$WORK/squashfs-root/etc/issue.net"
+echo "BorealOS 0.0.2"  > "$WORK/squashfs-root/etc/issue.net"
 echo "BorealOS"      > "$WORK/squashfs-root/etc/debian_version"
 echo "borealOS-live" > "$WORK/squashfs-root/etc/hostname"
 
@@ -509,7 +701,7 @@ while true; do
 BANNER
     printf '\033[0m'
     echo ""
-    echo "  BorealOS alpha Live  |  DE: $DE"
+    echo "  BorealOS 0.0.2 Live  |  DE: $DE"
     echo ""
     echo "  1) Graphical Install"
     echo "  2) Terminal Installer"
@@ -747,19 +939,53 @@ fi
 
 # Install the user's chosen DE
 if [ -n "$DE_PKGS" ]; then
-    apt-get install -y --no-install-recommends $DE_PKGS || { echo "FATAL: DE package install failed ($DE_PKGS), see error above"; exit 1; }
+    # --no-install-recommends dropped here on purpose: Debian's xfce4/
+    # xfce4-goodies metapackages list a lot of genuinely load-bearing
+    # things as Recommends rather than hard Depends (additional icon
+    # theme coverage, thumbnailers, xfce4-terminal, etc.) - stripping
+    # those is exactly what produced icons that are missing or fall back
+    # to a generic filler glyph. The narrower --no-install-recommends
+    # calls elsewhere in this script (kernel, kitty, the niri/GUI-installer
+    # build toolchain) are deliberately minimal and unrelated to desktop
+    # completeness, so those are left as-is.
+    apt-get install -y $DE_PKGS || { echo "FATAL: DE package install failed ($DE_PKGS), see error above"; exit 1; }
     if [ -n "$DM_PKGS" ]; then
-        apt-get install -y --no-install-recommends $DM_PKGS || { echo "FATAL: DM package install failed ($DM_PKGS), see error above"; exit 1; }
+        apt-get install -y $DM_PKGS || { echo "FATAL: DM package install failed ($DM_PKGS), see error above"; exit 1; }
     fi
     if [ -n "$DE_EXTRA_PKGS" ]; then
-        apt-get install -y --no-install-recommends $DE_EXTRA_PKGS || echo "WARN: theming packages failed ($DE_EXTRA_PKGS) - desktop will use default theme/icons/fonts"
+        apt-get install -y $DE_EXTRA_PKGS || echo "WARN: theming packages failed ($DE_EXTRA_PKGS) - desktop will use default theme/icons/fonts"
     fi
+    # hicolor-icon-theme is the fallback every other icon theme inherits
+    # from - without it, any icon missing from Papirus itself (not just
+    # ones recommends would have pulled in) has nothing to fall back to
+    # and shows as a blank/generic glyph instead.
+    apt-get install -y hicolor-icon-theme shared-mime-info || true
+    # Explicitly pin everything DE/DM-related as manually installed, so the
+    # later "apt-get autoremove --purge" (after build deps are removed) can
+    # never cascade-remove a DE package regardless of how apt resolved deps.
+    #
+    # IMPORTANT: comments inside this unquoted CHROOT heredoc are not
+    # inert - the outer shell (running build-iso.sh on the real host,
+    # before this text ever reaches the chroot) performs real backtick/$()
+    # command substitution even inside "#" comments. A backtick here once
+    # caused a real "apt-get autoremove --purge" to run on the host, with
+    # its output spliced into the script, which the chroot then tried to
+    # execute as a command. Never put backticks or bare $() in a comment
+    # anywhere in this heredoc.
+    set +e
+    for _pkg in $DE_PKGS $DM_PKGS $DE_EXTRA_PKGS; do
+        apt-mark manual "$_pkg" >/dev/null
+    done
+    set -e
 fi
 
 if [ "$DE_NAME" != "None" ]; then
     apt-get install -y --no-install-recommends fastfetch || echo "FAILED: fastfetch install, see error above"
     apt-get install -y --no-install-recommends kitty || { echo "FATAL: kitty install failed, see error above"; exit 1; }
     command -v kitty >/dev/null 2>&1 || { echo "FATAL: kitty binary missing after install"; exit 1; }
+
+    # Real browser instead of a placeholder/broken launcher.
+    apt-get install -y firefox-esr || echo "WARN: firefox-esr install failed - no browser will be available"
 
     if command -v kitty >/dev/null 2>&1; then
         update-alternatives --install /usr/bin/x-terminal-emulator x-terminal-emulator /usr/bin/kitty 50 2>/dev/null || true
@@ -842,10 +1068,201 @@ polkit.addRule(function(action, subject) {
     }
 });
 POLKITRULES
+
+if [ "$DE_NAME" = "XFCE" ]; then
+    echo "==> Verifying XFCE survived package install/cleanup..."
+    command -v startxfce4 >/dev/null 2>&1 || { echo "FATAL: startxfce4 missing after package install - XFCE did not actually get installed, or something removed it. Aborting build instead of shipping a broken ISO."; exit 1; }
+    command -v xfwm4 >/dev/null 2>&1     || { echo "FATAL: xfwm4 missing after package install."; exit 1; }
+    command -v xfce4-panel >/dev/null 2>&1 || { echo "FATAL: xfce4-panel missing after package install."; exit 1; }
+    echo "OK: startxfce4, xfwm4, xfce4-panel all present."
+fi
 CHROOT
 
 umount "$WORK/squashfs-root/sys" "$WORK/squashfs-root/proc" "$WORK/squashfs-root/dev"
 ok "==> Packages installed."
+
+echo "==> Creating GRUB theme..."
+GRUB_THEME_DIR="$WORK/squashfs-root/usr/share/grub/themes/boreal"
+mkdir -p "$GRUB_THEME_DIR"
+
+# --- Fonts: GRUB needs real .pf2 bitmap fonts, it can't just read a font
+# name out of theme.txt and go find a system font like every other app.
+# The previous theme referenced "DejaVu Sans Bold 16" etc but never
+# generated or loaded any matching .pf2 - GRUB silently falls back to its
+# tiny built-in font whenever that happens, which is the actual reason the
+# boot menu looked plain.
+#
+# This now runs AFTER package install (moved from earlier in the script) and
+# reads the TTF straight out of squashfs-root's already-installed
+# fonts-ibm-plex (DE_EXTRA_PKGS, confirmed installed above), instead of a
+# separate `apt-get download fonts-ibm-plex` on the *build host's own* apt
+# sources. That separate download was the actual bug: fonts-ibm-plex is a
+# Debian contrib-section package, and if the build host isn't running the
+# exact right Debian release/config (e.g. it's Ubuntu, or contrib isn't
+# enabled), the download just fails silently and this whole feature no-ops
+# with a generic warning that doesn't say why. Reading it out of the chroot
+# removes that dependency on the host's own package availability entirely -
+# if it's not there, the earlier apt-mark/apt-get install step for
+# DE_EXTRA_PKGS would already have failed loudly.
+GRUB_FONT_OK=false
+if command -v grub-mkfont >/dev/null 2>&1; then
+    REGULAR_TTF=$(find "$WORK/squashfs-root/usr/share/fonts" -iname "IBMPlexSans-Regular.*tf" 2>/dev/null | head -1)
+    BOLD_TTF=$(find "$WORK/squashfs-root/usr/share/fonts" -iname "IBMPlexSans-Bold.*tf" 2>/dev/null | head -1)
+    if [ -n "$REGULAR_TTF" ] && [ -n "$BOLD_TTF" ]; then
+        grub-mkfont --output="$GRUB_THEME_DIR/plex_regular_16.pf2" --size=16 \
+            --name="Boreal Plex Regular 16" "$REGULAR_TTF" 2>/dev/null &&
+        grub-mkfont --output="$GRUB_THEME_DIR/plex_bold_16.pf2" --size=16 \
+            --name="Boreal Plex Bold 16" "$BOLD_TTF" 2>/dev/null &&
+        grub-mkfont --output="$GRUB_THEME_DIR/plex_regular_13.pf2" --size=13 \
+            --name="Boreal Plex Regular 13" "$REGULAR_TTF" 2>/dev/null &&
+        GRUB_FONT_OK=true
+    else
+        warn "IBMPlexSans-Regular/Bold not found under squashfs-root/usr/share/fonts - fonts-ibm-plex may not have installed correctly (check the DE_EXTRA_PKGS install output above)."
+    fi
+else
+    warn "grub-mkfont not found on build host (install grub2-common / grub-common)."
+fi
+if [ "$GRUB_FONT_OK" = true ]; then
+    ok "GRUB fonts generated from IBM Plex Sans (source: $REGULAR_TTF)."
+else
+    warn "Could not generate IBM Plex Sans .pf2 fonts for GRUB - boot menu will use GRUB's built-in font instead."
+fi
+
+# Use the dedicated GRUB background (thin-line pine/aurora artwork, already
+# dark) instead of the desktop wallpaper - GRUB has no compositor and no UI
+# chrome to separate text from a busy image, so a background made for this
+# specifically reads better than reusing the desktop one. Falls back to the
+# desktop wallpaper if it's missing rather than failing the whole build.
+#
+# Resized to match the ACTUAL gfxmode (1024x768) directly, not a fixed
+# 1920x1080 intermediate - the source art is 1280x720 (16:9) while
+# 1024x768 is 4:3, so generating at 1920x1080 first and letting GRUB
+# stretch that down to 1024x768 at boot meant two lossy resizes plus a
+# real aspect-ratio distortion (a 16:9 image squashed into a 4:3 canvas).
+# That combination was the actual "low quality" - not a compression/
+# quality-setting issue. -resize WxH^ + -gravity center -extent WxH crops
+# to fill 1024x768 without distorting the image at all.
+GRUB_BG_SRC="$WALLPAPER_GRUB"
+[ -f "$GRUB_BG_SRC" ] || GRUB_BG_SRC="$WALLPAPER_DEFAULT"
+convert "$GRUB_BG_SRC" -resize 1024x768^ -gravity center -extent 1024x768 \
+    -depth 8 -define png:color-type=2 -interlace none \
+    "$GRUB_THEME_DIR/background.png" 2>/dev/null || \
+    cp "$GRUB_BG_SRC" "$GRUB_THEME_DIR/background.png"
+# Darken slightly so light-on-dark text/menu stays readable regardless of
+# which background image is in use, same principle as the panel's
+# translucent fill - matches the rest of the OS instead of relying on the
+# image's own contrast being good enough everywhere.
+convert "$GRUB_THEME_DIR/background.png" -fill black -colorize 20% \
+    -depth 8 -define png:color-type=2 -interlace none \
+    "$GRUB_THEME_DIR/background.png" 2>/dev/null || true
+convert "$BANNER" -trim -resize 400x -background none \
+    -depth 8 -define png:color-type=6 -interlace none \
+    "$GRUB_THEME_DIR/title.png" 2>/dev/null || \
+    cp "$BANNER" "$GRUB_THEME_DIR/title.png"
+
+# --- Selection highlight: a smaller, translucent pill (was a solid 560x54
+# block at full opacity, oversized against the now-smaller menu items and
+# not the same "glass" language as the panel/dialogs elsewhere in the OS).
+# Kept in the same accent blue (#1a5fb4) as kitty/GTK theme/xfwm4, but as a
+# semi-transparent fill with a soft light border instead of solid color, to
+# match the translucent-panel look used everywhere else.
+#
+# -depth 8 -define png:color-type=6 -interlace none: GRUB's own PNG loader
+# only understands 8-bit-per-channel, non-interlaced RGBA. ImageMagick's
+# default output for a synthetic xc:none canvas came out 16-bit here, which
+# GRUB's loader doesn't handle correctly - it was the actual cause of the
+# stray red pixels at the pill's rounded corners (misread channel/bit-depth
+# data at the anti-aliased edge), not a drawing mistake in the shape itself.
+convert -size 440x40 xc:none -depth 8 \
+    -fill "rgba(26,95,180,0.55)"   -draw "roundrectangle 0,0,439,39,12,12" \
+    -fill none -stroke "rgba(255,255,255,0.18)" -strokewidth 1 \
+        -draw "roundrectangle 0.5,0.5,438.5,38.5,12,12" \
+    -depth 8 -define png:color-type=6 -interlace none \
+    "$GRUB_THEME_DIR/select_c.png" 2>/dev/null || true
+
+TITLE_H=$(identify -format "%h" "$GRUB_THEME_DIR/title.png" 2>/dev/null || echo 164)
+
+if [ "$GRUB_FONT_OK" = true ]; then
+    MSG_FONT="Boreal Plex Regular 13"
+    ITEM_FONT="Boreal Plex Bold 16"
+    HINT_FONT="Boreal Plex Regular 13"
+    # (plex_bold_16.pf2 generated above matches ITEM_FONT here)
+else
+    MSG_FONT="DejaVu Sans Regular 13"
+    ITEM_FONT="DejaVu Sans Bold 14"
+    HINT_FONT="DejaVu Sans Regular 12"
+fi
+
+cat > "$GRUB_THEME_DIR/theme.txt" <<THEME
+desktop-image: "background.png"
+desktop-color: "#0b0e14"
+title-text: ""
+message-font: "${MSG_FONT}"
+message-color: "#eaf2ff"
+message-bg-color: "#0b0e14"
+terminal-box: "terminal_*.png"
+terminal-font: "${MSG_FONT}"
+terminal-width: "80%"
+terminal-height: "70%"
+terminal-left: "10%"
+terminal-top: "15%"
+
++ image {
+    top = 5%
+    left = 50%-200
+    width = 400
+    height = ${TITLE_H}
+    file = "title.png"
+}
+
++ boot_menu {
+    top = 45%
+    left = 50%-220
+    width = 440
+    height = 32%
+    item_font = "${ITEM_FONT}"
+    item_color = "#c7d6ec"
+    selected_item_color = "#ffffff"
+    item_height = 40
+    item_padding = 12
+    item_spacing = 8
+    icon_width = 0
+    icon_height = 0
+    scrollbar = false
+THEME
+if [ -f "$GRUB_THEME_DIR/select_c.png" ]; then
+    cat >> "$GRUB_THEME_DIR/theme.txt" <<THEME
+    selected_item_pixmap_style = "select_*.png"
+THEME
+fi
+cat >> "$GRUB_THEME_DIR/theme.txt" <<THEME
+}
+
++ progress_bar {
+    id = "__timeout__"
+    top = 84%
+    left = 50%-200
+    width = 400
+    height = 6
+    font = "${HINT_FONT}"
+    text_color = "#eaf2ff"
+    fg_color = "#3e8fe0"
+    bg_color = "#1c2330"
+    border_color = "#00000000"
+    show_text = false
+}
+
++ label {
+    top = 91%
+    left = 0
+    width = 100%
+    align = "center"
+    font = "${HINT_FONT}"
+    color = "#7d90ac"
+    text = "↑↓ navigate    ⏎ boot    e edit    c console"
+}
+THEME
+ok "GRUB theme generated (IBM Plex Sans, BorealOS-Dark palette, real selection highlight)."
 
 find "$WORK/squashfs-root/usr/share/backgrounds" "$WORK/squashfs-root/usr/share/wallpapers" \
      "$WORK/squashfs-root/usr/share/xfce4/backdrops" "$WORK/squashfs-root/usr/share/images/desktop-base" \
@@ -882,10 +1299,49 @@ export DEBIAN_FRONTEND=noninteractive
 gcc \$(pkg-config --cflags gtk+-3.0) -O2 -o /usr/local/bin/boreal-installer /tmp/boreal-installer.c \$(pkg-config --libs gtk+-3.0) -lpthread
 chmod +x /usr/local/bin/boreal-installer
 rm -f /tmp/boreal-installer.c
-apt-get remove -y --purge gcc gcc-12 gcc-13 gcc-14 cpp cpp-12 cpp-13 cpp-14 make libgtk-3-dev libglib2.0-dev libpango1.0-dev libcairo2-dev libgdk-pixbuf-2.0-dev libatk1.0-dev pkg-config 2>/dev/null || true
-apt-get autoremove -y --purge 2>/dev/null || true
+
+# --- Safe build-dep cleanup -------------------------------------------------
+# THIS is what ate xfce4-panel/xfdesktop4/xfce4-settings/xfce4-appfinder
+# last build. apt-mark manual (done earlier for $DE_PKGS/$DM_PKGS/
+# $DE_EXTRA_PKGS) only protects a package from apt-get autoremove's orphan
+# sweep - it does NOT stop a plain "apt-get remove <pkg>" from cascade-
+# removing anything that still depends on <pkg>, manual or not, and it does
+# NOT stop autoremove from dropping a sub-component that was only ever
+# pulled in *automatically* as a dependency of a manually-marked
+# metapackage. xfce4-panel, xfdesktop4, xfce4-settings, xfce4-appfinder and
+# libxfce4ui-utils are exactly that: auto-installed dependencies of the
+# manually-pinned "xfce4"/"xfce4-goodies" packages, so "apt-get remove
+# --purge <dev pkgs>" followed by "apt-get autoremove --purge" was free to
+# cascade straight through them.
+#
+# dpkg --purge has no dependency-solver cascade: it purges exactly the
+# named package and refuses (harmlessly swallowed by || true) if anything
+# still depends on it. Since gcc/cpp/make/pkg-config and these -dev headers
+# are pure build tooling that nothing in a normal desktop runtime depends
+# on, this removes exactly what we want and nothing else - it cannot reach
+# over and remove xfce4-panel or any other DE package no matter what apt's
+# dependency graph looks like. Two passes because dpkg still enforces
+# ordering (e.g. libgtk-3-dev has to go before libglib2.0-dev can be
+# purged) and this avoids having to hand-sort that order ourselves.
+# Deliberately NOT calling apt-get autoremove here at all - it's the other
+# half of what broke last time, and it buys negligible size (a handful of
+# already-tiny leaf packages, not the multi-hundred-MB toolchain).
+for _pass in 1 2; do
+    for _bp in gcc gcc-12 gcc-13 gcc-14 cpp cpp-12 cpp-13 cpp-14 make \
+               libgtk-3-dev libpango1.0-dev libcairo2-dev libgdk-pixbuf-2.0-dev \
+               libatk1.0-dev libglib2.0-dev pkg-config; do
+        dpkg --purge "\$_bp" 2>/dev/null || true
+    done
+done
 GUIBUILD
 ok "boreal-installer built."
+
+if [ -n "$DE_START" ]; then
+    echo "==> Re-verifying $DE_NAME right after the boreal-installer build/purge step (narrows down where a future regression would come from, instead of only finding out at the final check right before mksquashfs)..."
+    [ -x "$WORK/squashfs-root/usr/bin/$DE_START" ] || [ -x "$WORK/squashfs-root/usr/local/bin/$DE_START" ] || \
+        die "FATAL: $DE_START missing from squashfs-root immediately after the GUIBUILD dpkg --purge step - inspect that step, not the slimming step further down."
+    ok "OK: $DE_START present right after GUIBUILD."
+fi
 fi
 
 echo "==> Finalizing system..."
@@ -900,10 +1356,20 @@ find "$WORK/squashfs-root/usr/share/pixmaps" -name "*debian*" -delete 2>/dev/nul
 find "$WORK/squashfs-root/usr/share/icons" -name "*debian*" -delete 2>/dev/null || true
 find "$WORK/squashfs-root/boot/grub" -name "*debian*" -delete 2>/dev/null || true
 
-# Remove plymouth entirely from the live env — not used, and its initramfs hook
-# adds boot delay and can conflict with simple console boot.
-find "$WORK/squashfs-root/usr/share/plymouth"      "$WORK/squashfs-root/etc/plymouth"      -delete 2>/dev/null || true
-rm -f "$WORK/squashfs-root/usr/share/initramfs-tools/hooks/plymouth"       "$WORK/squashfs-root/etc/initramfs-tools/conf.d/plymouth" 2>/dev/null || true
+# live-boot depends on plymouth (needed only for the live/boot squashfs
+# session itself), so it can't be excluded from install in the first place.
+# But once we're done needing it, uninstall it PROPERLY via dpkg instead of
+# just deleting its files - deleting files while leaving the package
+# registered in dpkg's database is what used to cause a broken initramfs
+# hook (dpkg still thinks the files exist, references a now-missing PNG,
+# and update-initramfs chokes on it). --force-depends is needed because
+# live-boot formally depends on it; that's fine, live-boot itself doesn't
+# need it anymore once the live session is up and installation is possible.
+chroot "$WORK/squashfs-root" dpkg -r --force-depends \
+    plymouth plymouth-themes libplymouth5 \
+    plymouth-label plymouth-theme-debian-logo plymouth-theme-debian-spinner \
+    2>/dev/null || true
+find "$WORK/squashfs-root/etc/initramfs-tools" -iname "*plymouth*" -delete 2>/dev/null || true
 
 if [ "$DE_NAME" = "Niri" ]; then
     echo "==> Building niri from source (10-20 minutes)..."
@@ -961,11 +1427,32 @@ DesktopNames=niri
 DESK
 cd / && rm -rf /tmp/niri-src
 rustup self uninstall -y 2>/dev/null || rm -rf "$HOME/.cargo" "$HOME/.rustup"
+
+# --- Safe build-dep cleanup --------------------------------------------
+# See the comment on the equivalent step in the boreal-installer GUIBUILD
+# block above: apt-mark manual does not stop a plain "apt-get remove"
+# cascade, and does not stop autoremove from sweeping an auto-installed
+# runtime sub-component of a manually-pinned package. The niri build pulls
+# in a much larger, more tangled set of -dev packages than the installer
+# build does, so purging them one-by-one with dpkg (as we do above) isn't
+# practical here - instead we ask autoremove to simulate first (-s, no
+# changes made) and abort loudly if the simulated plan would touch
+# anything the Niri session needs at runtime, before ever running it for
+# real.
 apt-get remove -y --purge cmake meson ninja-build build-essential libclang-dev clang 2>/dev/null || true
-apt-get autoremove -y 2>/dev/null || true
+SIM=\$(apt-get autoremove -y --purge -s 2>/dev/null || true)
+if echo "\$SIM" | grep -E "^(Remv|Purg) (xwayland|libwayland-client0|libwayland-server0|libwayland-egl1|libwayland-cursor0|libxkbcommon0|libxkbcommon-x11-0|libseat1|libinput10|libdrm2|libgbm1|libpixman-1-0|libpipewire-0.3-0)" >/dev/null 2>&1; then
+    echo "\$SIM" | grep -E "^(Remv|Purg)"
+    echo "FATAL: simulated autoremove would strip a niri-session runtime dependency (see Remv/Purg lines above) - aborting before running it for real. Add whatever's missing here to the removal manually instead, or extend the protect-list above." >&2
+    exit 1
+fi
+apt-get autoremove -y --purge 2>/dev/null || true
 NIRICHROOT
     umount "$WORK/squashfs-root/sys" "$WORK/squashfs-root/proc" "$WORK/squashfs-root/dev"
     ok "niri built."
+    [ -x "$WORK/squashfs-root/usr/local/bin/niri" ] || die "FATAL: /usr/local/bin/niri missing from squashfs-root right after the niri build/purge step."
+    [ -x "$WORK/squashfs-root/usr/local/bin/niri-session" ] || die "FATAL: /usr/local/bin/niri-session missing from squashfs-root right after the niri build/purge step."
+    ok "OK: niri and niri-session present right after the niri build/purge step."
 fi
 
 echo "==> Enabling udev in OpenRC for live env..."
@@ -998,12 +1485,15 @@ cp "$WP_MAIN" "$WORK/squashfs-root/usr/share/backgrounds/xfce/xfce-shapes.png" 2
 cp "$WP_MAIN" "$WORK/squashfs-root/usr/share/backgrounds/xfce/xfce-verticals.png" 2>/dev/null || true
 cp "$WP_MAIN" "$WORK/squashfs-root/usr/share/backgrounds/xfce/xfce-stripes.png" 2>/dev/null || true
 
-echo "==> Slimming down image (apt cache, docs, man pages, locales)..."
+echo "==> Slimming down image (apt cache, docs, locales) - keeping man pages and per-package copyright files..."
 chroot "$WORK/squashfs-root" apt-get clean 2>/dev/null || true
 rm -rf "$WORK/squashfs-root/var/lib/apt/lists/"* 2>/dev/null || true
-rm -rf "$WORK/squashfs-root/usr/share/doc/"* 2>/dev/null || true
-rm -rf "$WORK/squashfs-root/usr/share/man/"* 2>/dev/null || true
-rm -rf "$WORK/squashfs-root/usr/share/info/"* 2>/dev/null || true
+# /usr/share/man is intentionally left alone now - man pages are kept.
+# /usr/share/doc/<pkg>/copyright is Debian Policy-required (it's the actual
+# license text for that package) so it's kept too; everything else under
+# doc/ (changelogs, examples, READMEs) is still trimmed for size.
+find "$WORK/squashfs-root/usr/share/doc" -mindepth 1 -not -name copyright -not -type d -delete 2>/dev/null || true
+find "$WORK/squashfs-root/usr/share/doc" -mindepth 1 -type d -empty -delete 2>/dev/null || true
 rm -rf "$WORK/squashfs-root/usr/share/lintian/"* 2>/dev/null || true
 find "$WORK/squashfs-root/usr/share/locale" -mindepth 1 -maxdepth 1 -type d -not -name 'en*' -exec rm -rf {} + 2>/dev/null || true
 find "$WORK/squashfs-root/usr/share/locale-langpack" -mindepth 1 -maxdepth 1 -type d -not -name 'en*' -exec rm -rf {} + 2>/dev/null || true
@@ -1011,6 +1501,13 @@ find "$WORK/squashfs-root/var/log" -type f -delete 2>/dev/null || true
 find "$WORK/squashfs-root/var/cache" -maxdepth 1 -type d -not -name apt -exec rm -rf {} + 2>/dev/null || true
 
 echo "==> Building SquashFS..."
+if [ "$DE_NAME" = "XFCE" ]; then
+    echo "==> Final XFCE check before squashfs (catches anything GUIBUILD's autoremove or the slimming step above may have stripped since the first check)..."
+    for bin in startxfce4 xfwm4 xfce4-panel xfdesktop; do
+        [ -x "$WORK/squashfs-root/usr/bin/$bin" ] || die "FINAL CHECK FAILED: $bin missing from squashfs-root right before mksquashfs. Something between package install and here removed it (likely the GUIBUILD gcc/dev-package purge+autoremove, or the doc/locale slimming step) despite apt-mark manual pinning. Refusing to ship a broken ISO - inspect what changed in that range."
+    done
+    ok "Final check passed: startxfce4, xfwm4, xfce4-panel, xfdesktop all present in squashfs-root."
+fi
 mksquashfs "$WORK/squashfs-root" "$WORK/iso/live/filesystem.squashfs" \
     -comp zstd -Xcompression-level 19 -noappend -xattrs -quiet || die "mksquashfs failed"
 
@@ -1030,20 +1527,36 @@ cat > "$WORK/iso/boot/grub/grub.cfg" <<'GRUB'
 insmod all_video
 insmod gfxterm
 insmod png
+insmod font
+# Fixed target resolution, not "auto" - the theme's boot_menu geometry mixes
+# percentage positions with fixed-pixel elements (logo/banner width, item
+# height), so it was designed assuming one specific canvas size, and this
+# is the resolution that value was actually confirmed working at (both
+# here and in the post-install grub.cfg, which now matches this exactly -
+# that mismatch, not this number itself, was the actual cause of GRUB
+# looking different/smaller after install). The ",auto" suffix is kept
+# only as a fallback for hardware that can't do 1024x768, not as the
+# primary target - background/pill images are generated larger and GRUB
+# scales them to whatever's actually active, so they don't need to match
+# this number.
 set gfxmode=1024x768,auto
 set gfxpayload=keep
 terminal_output gfxterm
+if loadfont /boot/grub/themes/boreal/plex_regular_16.pf2; then
+    loadfont /boot/grub/themes/boreal/plex_bold_16.pf2
+    loadfont /boot/grub/themes/boreal/plex_regular_13.pf2
+fi
 set timeout_style=menu
 set timeout=10
 set default=0
 set theme=/boot/grub/themes/boreal/theme.txt
 
-menuentry "BorealOS Live" {
+menuentry "BorealOS 0.0.2 Live" {
     linux /boot/vmlinuz boot=live quiet
     initrd /boot/initrd.img
 }
 
-menuentry "BorealOS Live (safe mode)" {
+menuentry "BorealOS 0.0.2 Live (safe mode)" {
     linux /boot/vmlinuz boot=live nomodeset
     initrd /boot/initrd.img
 }

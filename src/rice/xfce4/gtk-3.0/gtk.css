@@ -1,0 +1,111 @@
+/* BorealOS desktop polish - a per-user gtk.css override layered on top of
+   the BorealOS-Dark theme. xfce4-panel has no native corner-radius/margin
+   property and some of this can't be done from xfconf at all, so it's done
+   here in CSS instead. Every selector below is scoped narrowly (by widget
+   ID or a XFCE-specific style class) so this is inert on any other GTK3
+   app - nothing here can bleed into unrelated windows. If a selector below
+   doesn't match a given XFCE/GTK version it's simply ignored, not an error. */
+
+@define-color boreal_accent #1a5fb4;
+
+/* ---- Top panel: square, matching the login/dialog "glass" opacity ----
+   No border-radius and no box-shadow here on purpose. A rounded or
+   shadowed TOP-LEVEL window (which the panel is - it's its own X11
+   window, not a widget inside something else) only actually looks right
+   with a compositor doing real alpha blending; without one, the corners
+   or shadow paint as a solid black rectangle instead of soft/transparent,
+   which is what "black box around the top bar" was. A square bar with a
+   single bottom border avoids the problem entirely - there's no rounded
+   corner or drop-shadow region for a missing compositor to get wrong,
+   and it sits flush against the screen edges anyway since it's full
+   width. 0.92 matches the login/dialog card's own opacity, so the panel
+   reads as the same "glass" material as everything else instead of its
+   own separate value. */
+#XfcePanelWindow {
+    background-color: rgba(10, 26, 36, 0.92);
+    border-radius: 0;
+    margin: 0;
+    border: none;
+    border-bottom: 1px solid alpha(#ffffff, 0.08);
+    box-shadow: none;
+}
+
+#XfcePanelWindow.horizontal {
+    padding: 0 6px;
+}
+
+/* Panel plugin buttons (menu, tasklist entries, tray, clock, etc.).
+   Rounding here is safe without a compositor - these are ordinary child
+   widgets painted inside the already-opaque, already-square panel
+   window above, not a top-level's own outer edge, so there's no shape
+   mismatch for a missing compositor to expose. */
+#XfcePanelWindow button,
+#XfcePanelWindow .xfce4-panel button {
+    border-radius: 10px;
+    transition: background-color 120ms ease-in-out;
+}
+
+#XfcePanelWindow button:hover,
+#XfcePanelWindow .xfce4-panel button:hover {
+    background-color: alpha(#ffffff, 0.08);
+}
+
+/* One consistent "active/checked" treatment for every panel button -
+   whiskermenu toggled open, a tasklist entry for the focused window,
+   anything else that can be in a checked state. Previously the tasklist
+   had its OWN separate, more specific rule (a different opacity, 0.18
+   instead of 0.35, plus an underline the generic rule didn't have) that
+   silently won over this one for tasklist buttons specifically via CSS
+   specificity, while every other panel button used the plain fill below
+   with no underline at all - that mismatch, not a single wrong value,
+   is what made different items look inconsistently underlined/opaque. */
+#XfcePanelWindow button:active,
+#XfcePanelWindow .xfce4-panel button:checked,
+.xfce4-panel .xfce4-tasklist button:checked {
+    background-color: alpha(@boreal_accent, 0.28);
+    border-bottom: 2px solid @boreal_accent;
+}
+
+/* ---- Whiskermenu popover ---- */
+/* Scoped to whiskermenu/panel popups ONLY. This used to also match
+   "window.background.csd", which is not whiskermenu-specific at all - it
+   matches basically any GTK3 window using client-side decorations, i.e.
+   nearly every dialog in the system (file pickers, Desktop Settings,
+   error popups, ...). That one rule was rounding every dialog's real
+   outer X11 window, and since dialogs generally don't have compositing
+   guaranteed the way the panel/greeter now do, every one of them showed
+   a solid black box outside the curve - this is what "black box around
+   all dialog/popup windows" actually was. */
+#whiskermenu-window,
+.xfce4-panel .popup {
+    border-radius: 14px;
+}
+
+#whiskermenu-window entry,
+.xfce4-panel .popup entry {
+    border-radius: 10px;
+}
+
+/* ---- Notifications / tooltips ---- */
+.xfce4-notifyd-window,
+tooltip {
+    border-radius: 12px;
+}
+
+/* ---- Thin modern scrollbars, matching the rounded aesthetic elsewhere ---- */
+scrollbar slider {
+    border-radius: 8px;
+    min-width: 8px;
+    min-height: 8px;
+    background-color: alpha(#ffffff, 0.25);
+}
+
+scrollbar slider:hover {
+    background-color: alpha(#ffffff, 0.4);
+}
+
+/* ---- xfdesktop icon labels: readable over any wallpaper without a harsh
+   box, using a soft shadow instead ---- */
+#xfdesktop-icon-view.view {
+    text-shadow: 0 1px 3px alpha(#000000, 0.8);
+}
