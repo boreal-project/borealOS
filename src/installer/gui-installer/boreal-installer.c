@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <pthread.h>
 
+typedef struct { char pkgs[256]; GtkWidget *check; } DriverRow;
+
 typedef struct {
     char device[64];
     char size_spec[32];
@@ -74,6 +76,17 @@ typedef struct {
     char root_fs[16];
     GList *planned_parts;
     gboolean net_skipped;
+    char channel[16];
+    char mirror[256];
+    GtkWidget *rel_stable, *rel_testing, *rel_unstable;
+    GtkWidget *mirror_tree, *mirror_scan_btn, *mirror_spinner, *mirror_status, *mirror_custom_entry;
+    GtkListStore *mirror_store;
+    gboolean scan_running;
+    GtkWidget *nf_allow, *nf_free, *driver_box;
+    GList *driver_rows;
+    gboolean drivers_built;
+    gboolean allow_nonfree;
+    char driver_pkgs[1024];
     GtkWidget *steps_popover;
     GtkWidget *auto_revealer, *custom_revealer, *luks_revealer;
     GtkWidget *log_scroll;
@@ -740,6 +753,32 @@ static void unbind_mounts(void) {
             "umount -l /mnt/sys 2>/dev/null; umount -l /mnt/run 2>/dev/null");
 }
 
+static gboolean matches_pattern(const char *value, const char *pattern);
+
+static gboolean install_drivers(void) {
+    STEP("Installing drivers and firmware");
+    if (!app.driver_pkgs[0]) { log_line("No extra drivers selected."); return TRUE; }
+    run_cmd("cp /etc/resolv.conf /mnt/etc/resolv.conf");
+    /* The copied system is stable, so install from stable sources and only then switch channel. */
+    run_cmd("bash -c '. /usr/local/lib/boreal/common.sh && BOREAL_CHANNEL=stable boreal_sources_list > /mnt/etc/apt/sources.list'");
+    if (run_cmd("chroot /mnt apt-get update") != 0) {
+        log_line("WARN: could not reach the package servers; drivers and firmware were not installed.");
+        run_cmd("bash -c '. /usr/local/lib/boreal/common.sh && boreal_sources_list > /mnt/etc/apt/sources.list'");
+        return TRUE;
+    }
+    gchar **pk = g_strsplit(app.driver_pkgs, " ", -1);
+    for (int i = 0; pk[i]; i++) {
+        if (!pk[i][0] || !matches_pattern(pk[i], "^[a-z0-9][a-z0-9.+-]*$")) continue;
+        char cmd[400];
+        snprintf(cmd, sizeof(cmd),
+            "chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends %s", pk[i]);
+        if (run_cmd(cmd) != 0) log_line("WARN: could not install %s, continuing.", pk[i]);
+    }
+    g_strfreev(pk);
+    run_cmd("bash -c '. /usr/local/lib/boreal/common.sh && boreal_sources_list > /mnt/etc/apt/sources.list'");
+    return TRUE;
+}
+
 static gboolean install_bundled_packages(void) {
     STEP("Installing packages");
     bind_mounts();
@@ -848,14 +887,13 @@ static gboolean write_network(void) {
 
 static gboolean configure_system(void) {
     STEP("Configuring system");
-    write_file("/mnt/etc/apt/sources.list",
-        "deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware\n"
-        "deb http://deb.debian.org/debian-security trixie-security main contrib non-free non-free-firmware\n"
-        "deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware\n");
+    run_cmd("bash -c '. /usr/local/lib/boreal/common.sh && boreal_sources_list > /mnt/etc/apt/sources.list'");
     run_cmd("rm -f /mnt/etc/apt/sources.list.d/*.list");
     run_cmd("mkdir -p /mnt/etc/apt/apt.conf.d");
     write_file("/mnt/etc/apt/apt.conf.d/70boreal-noninteractive",
         "DPkg::Options {\n   \"--force-confdef\";\n   \"--force-confold\";\n}\n");
+
+    run_cmd("bash -c '. /usr/local/lib/boreal/common.sh && boreal_write_branding /mnt'");
 
     char script[4096];
     snprintf(script, sizeof(script),
@@ -868,9 +906,7 @@ static gboolean configure_system(void) {
         "grep -q '^%s' /etc/locale.gen 2>/dev/null || echo '%s UTF-8' >> /etc/locale.gen\n"
         "locale-gen\n"
         "echo 'LANG=%s' > /etc/locale.conf\n"
-        "cat > /etc/os-release <<OS\nNAME=\"BorealOS\"\nPRETTY_NAME=\"BorealOS 0.0.2\"\nID=borealos\nID_LIKE=\nVERSION=\"0.0.2\"\nVERSION_ID=\"0.0.2\"\nHOME_URL=\"https://borealos.org\"\nOS\n"
-        "cat > /etc/lsb-release <<LSB\nDISTRIB_ID=BorealOS\nDISTRIB_RELEASE=0.0.2\nDISTRIB_CODENAME=boreal\nDISTRIB_DESCRIPTION=\"BorealOS 0.0.2\"\nLSB\n"
-        "echo 'BorealOS' > /etc/issue\necho 'BorealOS 0.0.2' > /etc/issue.net\necho 'BorealOS' > /etc/debian_version\n",
+        "true\n",
         app.hostname, app.hostname, app.timezone, app.timezone,
         app.locale, app.locale, app.locale, app.locale, app.locale);
     write_file("/mnt/tmp/boreal-configure.sh", script);
@@ -1091,9 +1127,9 @@ static gboolean install_grub(void) {
         "    fi\n"
         "    set theme=%s/grub/themes/boreal/theme.txt\n"
         "else\n    set menu_color_normal=cyan/black\n    set menu_color_highlight=black/cyan\nfi\n\n"
-        "menuentry \"BorealOS 0.0.2\" {\n    %ssearch --no-floppy --fs-uuid --set=root %s\n"
+        "menuentry \"BorealOS " BOREAL_VERSION "\" {\n    %ssearch --no-floppy --fs-uuid --set=root %s\n"
         "    linux %s/vmlinuz-%s root=UUID=%s ro quiet\n    initrd %s/initrd.img-%s\n}\n"
-        "menuentry \"BorealOS 0.0.2 (recovery)\" {\n    %ssearch --no-floppy --fs-uuid --set=root %s\n"
+        "menuentry \"BorealOS " BOREAL_VERSION " (recovery)\" {\n    %ssearch --no-floppy --fs-uuid --set=root %s\n"
         "    linux %s/vmlinuz-%s root=UUID=%s ro single\n    initrd %s/initrd.img-%s\n}\n",
         boot_path_prefix, boot_path_prefix, boot_path_prefix, boot_path_prefix, boot_path_prefix,
         unlock, search_uuid, boot_path_prefix, kver, app.root_uuid, boot_path_prefix, kver,
@@ -1170,6 +1206,7 @@ static void *install_thread(void *arg) {
         {"Writing fstab", write_fstab, 0.58},
         {"Writing network config", write_network, 0.60},
         {"Configuring system", configure_system, 0.68},
+        {"Installing drivers and firmware", install_drivers, 0.70},
         {"Setting passwords", set_passwords, 0.72},
         {"Finalizing system", remove_live_boot, 0.85},
         {"Restoring inittab", restore_inittab, 0.87},
@@ -1179,7 +1216,7 @@ static void *install_thread(void *arg) {
     };
     for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
         set_progress(steps[i].frac - 0.02, steps[i].name);
-        gboolean use_bind = (steps[i].fn == configure_system || steps[i].fn == set_passwords ||
+        gboolean use_bind = (steps[i].fn == configure_system || steps[i].fn == install_drivers || steps[i].fn == set_passwords ||
                               steps[i].fn == remove_live_boot || steps[i].fn == setup_display_manager ||
                               steps[i].fn == install_grub);
         if (use_bind) bind_mounts();
@@ -1240,6 +1277,37 @@ static void collect_state_from_ui(void) {
     strncpy(app.net_gw, gtk_entry_get_text(GTK_ENTRY(app.net_gw_entry)), sizeof(app.net_gw) - 1);
     strncpy(app.net_dns, gtk_entry_get_text(GTK_ENTRY(app.net_dns_entry)), sizeof(app.net_dns) - 1);
     if (!app.net_dns[0]) strncpy(app.net_dns, "1.1.1.1", sizeof(app.net_dns) - 1);
+
+    if (app.rel_testing && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.rel_testing))) strcpy(app.channel, "testing");
+    else if (app.rel_unstable && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.rel_unstable))) strcpy(app.channel, "unstable");
+    else strcpy(app.channel, "stable");
+
+    app.mirror[0] = '\0';
+    if (app.mirror_custom_entry) {
+        const char *custom = gtk_entry_get_text(GTK_ENTRY(app.mirror_custom_entry));
+        if (custom[0]) {
+            strncpy(app.mirror, custom, sizeof(app.mirror) - 1);
+        } else {
+            GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(app.mirror_tree));
+            GtkTreeModel *model; GtkTreeIter it;
+            if (gtk_tree_selection_get_selected(sel, &model, &it)) {
+                gchar *url = NULL;
+                gtk_tree_model_get(model, &it, 1, &url, -1);
+                if (url) { strncpy(app.mirror, url, sizeof(app.mirror) - 1); g_free(url); }
+            }
+        }
+    }
+    app.allow_nonfree = !(app.nf_free && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.nf_free)));
+    app.driver_pkgs[0] = '\0';
+    for (GList *l = app.driver_rows; l; l = l->next) {
+        DriverRow *r = l->data;
+        if (!app.allow_nonfree || !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(r->check))) continue;
+        if (app.driver_pkgs[0]) strncat(app.driver_pkgs, " ", sizeof(app.driver_pkgs) - strlen(app.driver_pkgs) - 1);
+        strncat(app.driver_pkgs, r->pkgs, sizeof(app.driver_pkgs) - strlen(app.driver_pkgs) - 1);
+    }
+    if (app.allow_nonfree) unsetenv("BOREAL_COMPONENTS"); else setenv("BOREAL_COMPONENTS", "main", 1);
+    setenv("BOREAL_CHANNEL", app.channel, 1);
+    if (app.mirror[0]) setenv("BOREAL_MIRROR", app.mirror, 1); else unsetenv("BOREAL_MIRROR");
 }
 
 static void on_start_install(GtkButton *btn, gpointer data) {
@@ -1254,7 +1322,7 @@ static void on_start_install(GtkButton *btn, gpointer data) {
 }
 
 static const char *PAGE_ORDER[] = {
-    "welcome", "user", "timezone", "extrausers", "network", "wifi", "disk", "partitioning", "summary", "progress", "finish"
+    "welcome", "network", "wifi", "release", "drivers", "user", "timezone", "extrausers", "disk", "partitioning", "summary", "progress", "finish"
 };
 #define N_PAGES (sizeof(PAGE_ORDER) / sizeof(PAGE_ORDER[0]))
 
@@ -1304,6 +1372,10 @@ static void build_summary(void) {
     add_summary_row(grid, 6, "Extra users", users);
     add_summary_row(grid, 7, "LVM", app.use_lvm ? "yes" : "no");
     add_summary_row(grid, 8, "Encryption", app.use_luks ? "LUKS" : "none");
+    add_summary_row(grid, 9, "Release channel", app.channel);
+    add_summary_row(grid, 10, "Mirror", app.mirror[0] ? app.mirror : "default (automatic)");
+    add_summary_row(grid, 11, "Non-free software", app.allow_nonfree ? "allowed" : "no (free only)");
+    add_summary_row(grid, 12, "Drivers & firmware", app.driver_pkgs[0] ? app.driver_pkgs : "none");
     gtk_widget_show_all(GTK_WIDGET(grid));
 }
 
@@ -1383,6 +1455,12 @@ static gboolean validate_page(int idx) {
             show_message("Warning", "Fill in interface, IP and gateway for static networking.", FALSE);
             return FALSE;
         }
+    } else if (!strcmp(name, "release")) {
+        collect_state_from_ui();
+        if (app.mirror[0] && !matches_pattern(app.mirror, "^https?://[A-Za-z0-9._~:/%-]+$")) {
+            show_message("Warning", "The mirror must be an http:// or https:// address.", FALSE);
+            return FALSE;
+        }
     } else if (!strcmp(name, "wifi")) {
         collect_state_from_ui();
         if (!app.wifi_ssid[0] || !app.wifi_pass[0]) {
@@ -1394,6 +1472,8 @@ static gboolean validate_page(int idx) {
 }
 
 static void refresh_wifi_list(void);
+static void refresh_release_page(void);
+static void refresh_drivers_page(void);
 
 static gboolean page_should_skip(int idx) {
     if (!strcmp(PAGE_ORDER[idx], "wifi") && strcmp(app.net_type, "wifi") != 0) return TRUE;
@@ -1483,6 +1563,8 @@ static const char *page_display_name(const char *name) {
     if (!strcmp(name, "extrausers")) return "Extra users";
     if (!strcmp(name, "network")) return "Network";
     if (!strcmp(name, "wifi")) return "Wi-Fi";
+    if (!strcmp(name, "release")) return "Release & mirror";
+    if (!strcmp(name, "drivers")) return "Drivers & firmware";
     if (!strcmp(name, "disk")) return "Disk";
     if (!strcmp(name, "partitioning")) return "Partitioning";
     if (!strcmp(name, "summary")) return "Summary";
@@ -1553,6 +1635,8 @@ static void goto_page(int idx) {
     gtk_stack_set_visible_child_name(GTK_STACK(app.stack), PAGE_ORDER[idx]);
     if (!strcmp(PAGE_ORDER[idx], "summary")) build_summary();
     if (!strcmp(PAGE_ORDER[idx], "wifi")) refresh_wifi_list();
+    if (!strcmp(PAGE_ORDER[idx], "release")) refresh_release_page();
+    if (!strcmp(PAGE_ORDER[idx], "drivers")) refresh_drivers_page();
     update_nav_buttons();
 }
 
@@ -2474,6 +2558,261 @@ static GtkWidget *page_wifi(void) {
     return box;
 }
 
+typedef struct { char *url; int kbps; int latency; } MirrorRow;
+
+static gboolean mirror_row_idle(gpointer data) {
+    MirrorRow *r = data;
+    const char *host = strstr(r->url, "://");
+    host = host ? host + 3 : r->url;
+    char speed[32], lat[32];
+    if (r->kbps >= 1024) snprintf(speed, sizeof(speed), "%.1f MB/s", r->kbps / 1024.0);
+    else snprintf(speed, sizeof(speed), "%d KB/s", r->kbps);
+    snprintf(lat, sizeof(lat), "%d ms", r->latency);
+    GtkTreeIter it;
+    gtk_list_store_append(app.mirror_store, &it);
+    gtk_list_store_set(app.mirror_store, &it, 0, host, 1, r->url, 2, speed, 3, lat, 4, r->kbps, -1);
+    g_free(r->url);
+    g_free(r);
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean mirror_scan_done_idle(gpointer data) {
+    gboolean offline = GPOINTER_TO_INT(data);
+    app.scan_running = FALSE;
+    gtk_spinner_stop(GTK_SPINNER(app.mirror_spinner));
+    gtk_widget_set_sensitive(app.mirror_scan_btn, TRUE);
+    GtkTreeIter it;
+    GtkTreePath *p = gtk_tree_path_new_from_indices(1, -1);
+    if (!offline && gtk_tree_model_get_iter(GTK_TREE_MODEL(app.mirror_store), &it, p)) {
+        gchar *host = NULL, *speed = NULL;
+        gtk_tree_model_get(GTK_TREE_MODEL(app.mirror_store), &it, 0, &host, 2, &speed, -1);
+        GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(app.mirror_tree));
+        gtk_tree_selection_select_path(sel, p);
+        char msg[300];
+        snprintf(msg, sizeof(msg), "Fastest for you: %s (%s). You can pick another one below.", host, speed);
+        gtk_label_set_text(GTK_LABEL(app.mirror_status), msg);
+        g_free(host); g_free(speed);
+    } else if (offline) {
+        gtk_label_set_text(GTK_LABEL(app.mirror_status),
+            "No internet connection detected. Connect on the Network page, or keep the default mirror.");
+    } else {
+        gtk_label_set_text(GTK_LABEL(app.mirror_status), "No mirror answered. The default mirror will be used.");
+    }
+    gtk_tree_path_free(p);
+    return G_SOURCE_REMOVE;
+}
+
+static void *mirror_scan_thread(void *arg) {
+    char *channel = arg;
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "BOREAL_CHANNEL=%s /usr/local/lib/boreal/boreal-mirror-scan 2>/dev/null", channel);
+    g_free(channel);
+    gboolean offline = FALSE;
+    FILE *fp = popen(cmd, "r");
+    if (fp) {
+        char line[512];
+        while (fgets(line, sizeof(line), fp)) {
+            line[strcspn(line, "\r\n")] = '\0';
+            if (!strncmp(line, "ERR offline", 11)) { offline = TRUE; continue; }
+            int kbps, lat; char url[400];
+            if (sscanf(line, "%d %d %399s", &kbps, &lat, url) == 3 && !strncmp(url, "http", 4)) {
+                MirrorRow *r = g_new0(MirrorRow, 1);
+                r->url = g_strdup(url); r->kbps = kbps; r->latency = lat;
+                g_idle_add(mirror_row_idle, r);
+            }
+        }
+        pclose(fp);
+    } else {
+        offline = TRUE;
+    }
+    g_idle_add(mirror_scan_done_idle, GINT_TO_POINTER(offline));
+    return NULL;
+}
+
+static void mirror_store_reset(void) {
+    gtk_list_store_clear(app.mirror_store);
+    GtkTreeIter it;
+    gtk_list_store_append(app.mirror_store, &it);
+    gtk_list_store_set(app.mirror_store, &it, 0, "Default mirror (automatic, recommended)", 1, "",
+                       2, "-", 3, "-", 4, G_MAXINT, -1);
+    gtk_tree_selection_select_iter(gtk_tree_view_get_selection(GTK_TREE_VIEW(app.mirror_tree)), &it);
+}
+
+static void on_mirror_scan(GtkButton *btn, gpointer data) {
+    (void)btn; (void)data;
+    if (app.scan_running) return;
+    collect_state_from_ui();
+    app.scan_running = TRUE;
+    mirror_store_reset();
+    gtk_widget_set_sensitive(app.mirror_scan_btn, FALSE);
+    gtk_spinner_start(GTK_SPINNER(app.mirror_spinner));
+    gtk_label_set_text(GTK_LABEL(app.mirror_status), "Testing mirrors... this takes a few seconds.");
+    pthread_t t;
+    pthread_create(&t, NULL, mirror_scan_thread, g_strdup(app.channel));
+    pthread_detach(t);
+}
+
+static void refresh_release_page(void) {
+    gtk_widget_set_sensitive(app.mirror_scan_btn, !app.net_skipped && !app.scan_running);
+    if (app.net_skipped)
+        gtk_label_set_text(GTK_LABEL(app.mirror_status),
+            "Network setup was skipped, so mirrors can't be tested. The default mirror will be used.");
+}
+
+static GtkWidget *hint_label(const char *text) {
+    GtkWidget *l = gtk_label_new(text);
+    gtk_widget_set_name(l, "hint-label");
+    gtk_widget_set_halign(l, GTK_ALIGN_START);
+    gtk_label_set_xalign(GTK_LABEL(l), 0.0);
+    gtk_label_set_line_wrap(GTK_LABEL(l), TRUE);
+    gtk_label_set_max_width_chars(GTK_LABEL(l), 70);
+    gtk_widget_set_margin_start(l, 28);
+    return l;
+}
+
+static GtkWidget *page_release(void) {
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_container_set_border_width(GTK_CONTAINER(box), 24);
+
+    GtkWidget *title = gtk_label_new("Release channel and mirror");
+    gtk_widget_set_name(title, "title-label");
+    gtk_widget_set_halign(title, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(box), title, FALSE, FALSE, 0);
+
+    GtkWidget *g1 = gtk_label_new("How new should your software be?");
+    gtk_widget_set_name(g1, "group-label");
+    gtk_widget_set_halign(g1, GTK_ALIGN_START);
+    gtk_widget_set_margin_top(g1, 8);
+    gtk_box_pack_start(GTK_BOX(box), g1, FALSE, FALSE, 0);
+
+    app.rel_stable = gtk_radio_button_new_with_label(NULL, "Stable (recommended)");
+    app.rel_testing = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(app.rel_stable), "Testing");
+    app.rel_unstable = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(app.rel_stable), "Unstable (rolling)");
+    gtk_box_pack_start(GTK_BOX(box), app.rel_stable, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), hint_label("Thoroughly tested software that rarely changes. Best for everyday use and for anyone unsure."), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), app.rel_testing, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), hint_label("Newer versions that will become the next stable release. Mostly fine, occasionally something breaks. Your system moves to this channel on its first update."), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), app.rel_unstable, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), hint_label("The newest software, updated constantly. Things can break without warning, so choose this only if you accept that. Your system moves to this channel on its first update."), FALSE, FALSE, 0);
+
+    GtkWidget *g2 = gtk_label_new("Where should software be downloaded from?");
+    gtk_widget_set_name(g2, "group-label");
+    gtk_widget_set_halign(g2, GTK_ALIGN_START);
+    gtk_widget_set_margin_top(g2, 12);
+    gtk_box_pack_start(GTK_BOX(box), g2, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), hint_label("A mirror is a server that hosts the software. A closer, faster one means quicker installs and updates. The default picks one automatically; you can also test them and choose."), FALSE, FALSE, 0);
+
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    app.mirror_scan_btn = gtk_button_new_with_label("Find the fastest mirror for me");
+    gtk_widget_set_name(app.mirror_scan_btn, "nav-button");
+    g_signal_connect(app.mirror_scan_btn, "clicked", G_CALLBACK(on_mirror_scan), NULL);
+    app.mirror_spinner = gtk_spinner_new();
+    app.mirror_status = gtk_label_new("");
+    gtk_widget_set_name(app.mirror_status, "hint-label");
+    gtk_label_set_xalign(GTK_LABEL(app.mirror_status), 0.0);
+    gtk_label_set_line_wrap(GTK_LABEL(app.mirror_status), TRUE);
+    gtk_label_set_max_width_chars(GTK_LABEL(app.mirror_status), 50);
+    gtk_box_pack_start(GTK_BOX(row), app.mirror_scan_btn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(row), app.mirror_spinner, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(row), app.mirror_status, TRUE, TRUE, 0);
+    gtk_widget_set_margin_top(row, 6);
+    gtk_box_pack_start(GTK_BOX(box), row, FALSE, FALSE, 0);
+
+    app.mirror_store = gtk_list_store_new(5, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT);
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(app.mirror_store), 4, GTK_SORT_DESCENDING);
+    app.mirror_tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(app.mirror_store));
+    const char *cols[] = { "Mirror", "Speed", "Latency" };
+    for (int i = 0; i < 3; i++) {
+        GtkTreeViewColumn *c = gtk_tree_view_column_new_with_attributes(cols[i], gtk_cell_renderer_text_new(), "text", i == 0 ? 0 : i + 1, NULL);
+        gtk_tree_view_column_set_expand(c, i == 0);
+        gtk_tree_view_append_column(GTK_TREE_VIEW(app.mirror_tree), c);
+    }
+    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(scroll), 150);
+    gtk_container_add(GTK_CONTAINER(scroll), app.mirror_tree);
+    gtk_box_pack_start(GTK_BOX(box), scroll, FALSE, FALSE, 4);
+    mirror_store_reset();
+
+    app.mirror_custom_entry = gtk_entry_new();
+    gtk_widget_set_name(app.mirror_custom_entry, "dark-entry");
+    gtk_entry_set_placeholder_text(GTK_ENTRY(app.mirror_custom_entry), "Or enter your own mirror, e.g. https://mirror.example.org/debian");
+    gtk_box_pack_start(GTK_BOX(box), app.mirror_custom_entry, FALSE, FALSE, 0);
+    return box;
+}
+
+static void on_nonfree_toggled(GtkToggleButton *b, gpointer data) {
+    (void)b; (void)data;
+    gboolean allow = !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.nf_free));
+    for (GList *l = app.driver_rows; l; l = l->next) gtk_widget_set_sensitive(((DriverRow *)l->data)->check, allow);
+}
+
+static void refresh_drivers_page(void) {
+    if (app.drivers_built) return;
+    app.drivers_built = TRUE;
+    char *out = run_capture("/usr/local/lib/boreal/boreal-driver-options 2>/dev/null");
+    if (out) {
+        gchar **lines = g_strsplit(out, "\n", -1);
+        for (int i = 0; lines[i]; i++) {
+            gchar **f = g_strsplit(lines[i], "|", 6);
+            if (g_strv_length(f) == 6) {
+                DriverRow *r = g_new0(DriverRow, 1);
+                strncpy(r->pkgs, f[2], sizeof(r->pkgs) - 1);
+                char *title = g_strdup_printf("%s%s", f[1], !strcmp(f[3], "nonfree") ? "  (non-free)" : "");
+                r->check = gtk_check_button_new_with_label(title);
+                g_free(title);
+                gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(r->check), !strcmp(f[4], "on"));
+                app.driver_rows = g_list_append(app.driver_rows, r);
+                gtk_box_pack_start(GTK_BOX(app.driver_box), r->check, FALSE, FALSE, 0);
+                gtk_box_pack_start(GTK_BOX(app.driver_box), hint_label(f[5]), FALSE, FALSE, 0);
+            }
+            g_strfreev(f);
+        }
+        g_strfreev(lines);
+        g_free(out);
+    }
+    if (!app.driver_rows)
+        gtk_box_pack_start(GTK_BOX(app.driver_box), hint_label("Nothing was detected that needs extra drivers or firmware."), FALSE, FALSE, 0);
+    gtk_widget_show_all(app.driver_box);
+}
+
+static GtkWidget *page_drivers(void) {
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_container_set_border_width(GTK_CONTAINER(box), 24);
+
+    GtkWidget *title = gtk_label_new("Drivers and firmware");
+    gtk_widget_set_name(title, "title-label");
+    gtk_widget_set_halign(title, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(box), title, FALSE, FALSE, 0);
+
+    GtkWidget *g1 = gtk_label_new("Free or non-free software?");
+    gtk_widget_set_name(g1, "group-label");
+    gtk_widget_set_halign(g1, GTK_ALIGN_START);
+    gtk_widget_set_margin_top(g1, 8);
+    gtk_box_pack_start(GTK_BOX(box), g1, FALSE, FALSE, 0);
+
+    app.nf_allow = gtk_radio_button_new_with_label(NULL, "Allow non-free firmware and drivers (recommended)");
+    app.nf_free = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(app.nf_allow), "Free software only");
+    g_signal_connect(app.nf_free, "toggled", G_CALLBACK(on_nonfree_toggled), NULL);
+    gtk_box_pack_start(GTK_BOX(box), app.nf_allow, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), hint_label("Some hardware only works with firmware or drivers whose source code is not public. They are safe and widely used, but not open source."), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), app.nf_free, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(box), hint_label("Only open-source software is installed. Some Wi-Fi cards, graphics features or sound devices may not work."), FALSE, FALSE, 0);
+
+    GtkWidget *g2 = gtk_label_new("What we found in your computer");
+    gtk_widget_set_name(g2, "group-label");
+    gtk_widget_set_halign(g2, GTK_ALIGN_START);
+    gtk_widget_set_margin_top(g2, 12);
+    gtk_box_pack_start(GTK_BOX(box), g2, FALSE, FALSE, 0);
+
+    app.driver_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(scroll), 240);
+    gtk_container_add(GTK_CONTAINER(scroll), app.driver_box);
+    gtk_box_pack_start(GTK_BOX(box), scroll, TRUE, TRUE, 4);
+    gtk_box_pack_start(GTK_BOX(box), hint_label("Drivers are downloaded during installation, so an internet connection is needed. Without one they are skipped, and you can add them later."), FALSE, FALSE, 0);
+    return box;
+}
+
 static GtkWidget *page_summary(void) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_container_set_border_width(GTK_CONTAINER(box), 24);
@@ -2689,6 +3028,8 @@ int main(int argc, char **argv) {
     gtk_stack_add_named(GTK_STACK(app.stack), wrap_page(page_extrausers()), "extrausers");
     gtk_stack_add_named(GTK_STACK(app.stack), wrap_page(page_network()), "network");
     gtk_stack_add_named(GTK_STACK(app.stack), wrap_page(page_wifi()), "wifi");
+    gtk_stack_add_named(GTK_STACK(app.stack), wrap_page(page_release()), "release");
+    gtk_stack_add_named(GTK_STACK(app.stack), wrap_page(page_drivers()), "drivers");
     gtk_stack_add_named(GTK_STACK(app.stack), wrap_page(page_disk()), "disk");
     gtk_stack_add_named(GTK_STACK(app.stack), wrap_page(page_partitioning()), "partitioning");
     gtk_stack_add_named(GTK_STACK(app.stack), wrap_page(page_summary()), "summary");

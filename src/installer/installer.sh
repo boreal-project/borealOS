@@ -1,5 +1,10 @@
 #!/bin/bash
 
+for _lib in /usr/local/lib/boreal/common.sh "$(dirname "$0")/lib/boreal-common.sh"; do
+    [ -f "$_lib" ] && { . "$_lib"; break; }
+done
+[ -n "$BOREAL_VERSION" ] || { echo "boreal-common.sh not found" >&2; exit 1; }
+
 RED='\033[0;31m'
 GRN='\033[0;32m'
 CYN='\033[0;36m'
@@ -96,6 +101,23 @@ confirm() {
 }
 
 check_root() { [ "$EUID" -eq 0 ] || die "Must run as root."; }
+
+select_release() {
+    step "Release channel and mirror"
+    menu "Release channel:" \
+        "stable    - tested, recommended" \
+        "testing   - newer packages, some breakage" \
+        "unstable  - rolling, expect breakage"
+    BOREAL_CHANNEL="${MENU_RESULT%% *}"
+    echo "Press Enter to use the default mirror."
+    echo -ne "${CYN}Mirror URL${RST} [$(boreal_default_mirror)]: "
+    while read -r m; do
+        [ -z "$m" ] && break
+        boreal_valid_mirror "$m" && { BOREAL_MIRROR="$m"; break; }
+        echo -e "${RED}Must be an http(s) URL.${RST}"
+        echo -ne "${CYN}Mirror URL${RST}: "
+    done
+}
 
 check_assets() {
     [ -f /opt/borealOS/rootfs.tar.gz ]    || die "/opt/borealOS/rootfs.tar.gz missing."
@@ -471,12 +493,10 @@ IFACES
 configure_system() {
     step "Configuring system..."
 
-    cat > /mnt/etc/apt/sources.list <<SOURCES
-deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware
-SOURCES
+    boreal_sources_list > /mnt/etc/apt/sources.list
     rm -f /mnt/etc/apt/sources.list.d/*.list 2>/dev/null || true
+
+    boreal_write_branding /mnt
 
     chroot /mnt /bin/bash <<CHROOT || die "System configuration failed"
 set -e
@@ -500,24 +520,6 @@ sed -i "s|^# *${LOCALE}|${LOCALE}|" /etc/locale.gen 2>/dev/null || true
 grep -q "^${LOCALE}" /etc/locale.gen 2>/dev/null || echo "${LOCALE} UTF-8" >> /etc/locale.gen
 locale-gen
 echo "LANG=${LOCALE}" > /etc/locale.conf
-cat > /etc/os-release <<OS
-NAME="BorealOS"
-PRETTY_NAME="BorealOS 0.0.2"
-ID=borealos
-ID_LIKE=
-VERSION="0.0.2"
-VERSION_ID="0.0.2"
-HOME_URL="https://boreal-project.github.io"
-OS
-cat > /etc/lsb-release <<LSB
-DISTRIB_ID=BorealOS
-DISTRIB_RELEASE=0.0.2
-DISTRIB_CODENAME=boreal
-DISTRIB_DESCRIPTION="BorealOS 0.0.2"
-LSB
-echo "BorealOS"     > /etc/issue
-echo "BorealOS 0.0.2" > /etc/issue.net
-echo "BorealOS"     > /etc/debian_version
 
 command -v chronyd >/dev/null 2>&1 || command -v chrony >/dev/null 2>&1 || warn "chrony missing - it should have been baked into the ISO by build-iso.sh"
 cat > /etc/adjtime <<'ADJTIME'
@@ -735,12 +737,12 @@ else
     set menu_color_highlight=black/cyan
 fi
 
-menuentry "BorealOS 0.0.2" {
+menuentry "BorealOS ${BOREAL_VERSION}" {
     ${UNLOCK}search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
     linux /boot/vmlinuz-${KVER} root=UUID=${ROOT_UUID} ro quiet
     initrd /boot/initrd.img-${KVER}
 }
-menuentry "BorealOS 0.0.2 (recovery)" {
+menuentry "BorealOS ${BOREAL_VERSION} (recovery)" {
     ${UNLOCK}search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
     linux /boot/vmlinuz-${KVER} root=UUID=${ROOT_UUID} ro single
     initrd /boot/initrd.img-${KVER}
@@ -803,6 +805,7 @@ main() {
 
     select_disk
     select_partitioning
+    select_release
     get_user_info
     get_extra_users
     configure_network
@@ -812,6 +815,8 @@ main() {
     echo "  Disk:         $DISK"
     echo "  Hostname:     $HOSTNAME"
     echo "  Timezone:     $TIMEZONE"
+    echo "  Channel:      $BOREAL_CHANNEL ($(boreal_suite))"
+    echo "  Mirror:       ${BOREAL_MIRROR:-$(boreal_default_mirror)}"
     echo "  DE/WM:        $DE_CHOICE"
     echo "  Shell:        $SHELL_BIN"
     echo "  Network:      $NET_TYPE"

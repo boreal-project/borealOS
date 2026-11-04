@@ -21,6 +21,11 @@
     opacity: 0.9;
 }
 
+#hint-label {
+    font-size: 12px;
+    color: #9fb8b0;
+}
+
 #warn-label {
     color: #ff6b6b;
 }

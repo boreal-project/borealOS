@@ -1,0 +1,34 @@
+#!/bin/bash
+# Probe mirrors; print "<kbps> <latency_ms> <url>" per reachable mirror as it finishes.
+
+here="$(cd "$(dirname "$0")" && pwd)"
+for _lib in "$here/common.sh" "$here/boreal-common.sh"; do
+    [ -f "$_lib" ] && { . "$_lib"; break; }
+done
+declare -F boreal_suite >/dev/null || { echo "ERR lib" >&2; exit 1; }
+
+suite="$(boreal_suite)" || exit 1
+default="$(boreal_default_mirror)"
+list="${BOREAL_MIRROR_LIST:-$here/mirrors-$BOREAL_BASE.list}"
+
+probe() {
+    local url="${1%/}" out code conn speed
+    out=$(curl -s -o /dev/null --connect-timeout 3 --max-time 8 \
+        -w '%{http_code} %{time_connect} %{speed_download}' \
+        "$url/dists/$BOREAL_SUITE/InRelease") || return 0
+    read -r code conn speed <<<"$out"
+    [ "$code" = 200 ] || return 0
+    awk -v k="$speed" -v c="$conn" -v u="$url" 'BEGIN { printf "%d %d %s\n", k/1024, c*1000, u }'
+}
+export -f probe
+export BOREAL_SUITE="$suite"
+
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+
+{
+    echo "$default"
+    [ -f "$list" ] && grep -v '^[[:space:]]*#' "$list" | awk 'NF { print $1 }'
+} | sort -u | xargs -P 6 -I{} bash -c 'probe "$1"' _ {} | tee "$tmp"
+
+[ -s "$tmp" ] || { echo "ERR offline"; exit 2; }
