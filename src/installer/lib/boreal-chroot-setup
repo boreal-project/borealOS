@@ -40,8 +40,23 @@ if [ -n "${BOREAL_USE_BACKPORTS:-}" ]; then
 fi
 
 cr apt-get update
+
+# sysv-rc's rc/rcS symlinks survive debootstrap and dangle once sysv-rc is gone; drop them
+# so openrc's own wrappers (same paths) get installed.
+if chroot "$target" dpkg -s openrc >/dev/null 2>&1; then
+    for f in /etc/init.d/rc /etc/init.d/rcS; do
+        [ -L "$target$f" ] && rm -f "$target$f"
+    done
+    cr apt-get install --reinstall -y -o Dpkg::Options::=--force-confmiss openrc
+    for f in /etc/init.d/rc /etc/init.d/rcS; do
+        if [ -L "$target$f" ] || [ ! -x "$target$f" ] || ! grep -q openrc "$target$f"; then
+            echo "openrc did not install a working $f" >&2
+            exit 1
+        fi
+    done
+fi
 cr apt-get install -y --no-install-recommends udev kmod e2fsprogs initramfs-tools \
-    network-manager $boot_pkgs
+    network-manager iproute2 $boot_pkgs
 cr apt-get install -y --no-install-recommends "${apt_target[@]}" "$kernel"
 
 if [ -n "${BOREAL_ROOT_PASSWORD:-}" ]; then
@@ -50,6 +65,7 @@ fi
 
 if [ -n "${BOREAL_GRUB_DEVICE:-}" ]; then
     cat >> "$target/etc/default/grub" <<'GRUBCFG'
+GRUB_DISTRIBUTOR="BorealOS"
 GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200"
 GRUB_TERMINAL="console serial"
 GRUB_SERIAL_COMMAND="serial --speed=115200"

@@ -100,6 +100,18 @@ DISTRIB_RELEASE=${BOREAL_VERSION}
 DISTRIB_CODENAME=boreal
 DISTRIB_DESCRIPTION="BorealOS ${BOREAL_VERSION}"
 LSB
+    cat > "$root/etc/motd" <<MOTD
+
+Welcome to BorealOS ${BOREAL_VERSION}, based on Devuan GNU/Linux.
+
+Most programs included with this system are free software; the exact
+distribution terms for each program are described in the individual
+files in /usr/share/doc/*/copyright.
+
+BorealOS comes with ABSOLUTELY NO WARRANTY, to the extent permitted
+by applicable law.
+
+MOTD
     echo "BorealOS"                > "$root/etc/issue"
     echo "BorealOS ${BOREAL_VERSION}" > "$root/etc/issue.net"
     echo "BorealOS"                > "$root/etc/debian_version"
