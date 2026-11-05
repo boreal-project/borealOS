@@ -2,7 +2,7 @@
 # Finish a bootstrapped system: udev, kernel, initramfs, bootloader packages, networking.
 # Usage: boreal-chroot-setup <target>
 # env: BOREAL_KERNEL_PKG, BOREAL_BOOT_PKGS, BOREAL_HOSTNAME, BOREAL_ROOT_PASSWORD,
-#      BOREAL_USE_BACKPORTS=1, BOREAL_GRUB_DEVICE=/dev/xxx (installs grub there)
+#      BOREAL_KERNEL=lts|newest, BOREAL_BACKPORTS=none|all, BOREAL_GRUB_DEVICE=/dev/xxx
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -31,11 +31,19 @@ printf '127.0.0.1 localhost\n127.0.1.1 %s\n' "$host" > "$target/etc/hosts"
 
 cr() { chroot "$target" env DEBIAN_FRONTEND=noninteractive "$@"; }
 
+case "$BOREAL_KERNEL" in lts|newest) ;; *) echo "BOREAL_KERNEL must be lts or newest" >&2; exit 1 ;; esac
+if [ "$BOREAL_KERNEL" = lts ] && [ "$BOREAL_CHANNEL" != stable ]; then
+    echo "the LTS kernel choice needs the stable channel" >&2
+    exit 1
+fi
+
 apt_target=()
-if [ -n "${BOREAL_USE_BACKPORTS:-}" ]; then
-    bp="$(boreal_backports_suite)"
-    [ -n "$bp" ] || { echo "backports exist only on the stable channel" >&2; exit 1; }
-    boreal_backports_list > "$target/etc/apt/sources.list.d/backports.list"
+bp="$(boreal_backports_suite)"
+boreal_backports_list > "$target/etc/apt/sources.list.d/backports.list"
+[ -s "$target/etc/apt/sources.list.d/backports.list" ] || rm -f "$target/etc/apt/sources.list.d/backports.list"
+if [ "$BOREAL_KERNEL" = newest ] && [ -n "$bp" ]; then
+    mkdir -p "$target/etc/apt/preferences.d"
+    boreal_kernel_pin > "$target/etc/apt/preferences.d/boreal-kernel"
     apt_target=(-t "$bp")
 fi
 
@@ -58,6 +66,7 @@ fi
 cr apt-get install -y --no-install-recommends udev kmod e2fsprogs initramfs-tools \
     network-manager iproute2 $boot_pkgs
 cr apt-get install -y --no-install-recommends "${apt_target[@]}" "$kernel"
+cr apt-cache policy "$kernel" | head -6
 
 if [ -n "${BOREAL_ROOT_PASSWORD:-}" ]; then
     echo "root:${BOREAL_ROOT_PASSWORD}" | chroot "$target" chpasswd

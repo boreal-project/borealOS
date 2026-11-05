@@ -8,6 +8,8 @@ BOREAL_BASE="${BOREAL_BASE:-debian}"          # debian | devuan
 BOREAL_CHANNEL="${BOREAL_CHANNEL:-stable}"    # stable | testing | unstable
 BOREAL_MIRROR="${BOREAL_MIRROR:-}"            # empty = base default
 BOREAL_SECURITY_MIRROR="${BOREAL_SECURITY_MIRROR:-}"
+BOREAL_KERNEL="${BOREAL_KERNEL:-$([ "$BOREAL_CHANNEL" = stable ] && echo lts || echo newest)}"  # lts | newest
+BOREAL_BACKPORTS="${BOREAL_BACKPORTS:-none}"     # none | all (newest kernel implies kernel-only)
 BOREAL_COMPONENTS="${BOREAL_COMPONENTS:-main contrib non-free non-free-firmware}"
 
 boreal_suite() {
@@ -65,12 +67,31 @@ boreal_backports_suite() {
     return 0
 }
 
+# none | kernel | all
+boreal_backports_mode() {
+    [ -n "$(boreal_backports_suite)" ] || { echo none; return; }
+    if [ "$BOREAL_BACKPORTS" = all ]; then echo all
+    elif [ "$BOREAL_KERNEL" = newest ]; then echo kernel
+    else echo none; fi
+}
+
 boreal_backports_list() {
-    local bp mirror
-    bp="$(boreal_backports_suite)"
+    local mirror
     mirror="${BOREAL_MIRROR:-$(boreal_default_mirror)}"
-    [ -n "$bp" ] && echo "deb ${mirror%/} $bp main"
+    [ "$(boreal_backports_mode)" = none ] || echo "deb ${mirror%/} $(boreal_backports_suite) main"
     return 0
+}
+
+# apt preferences that take only kernel packages from backports.
+boreal_kernel_pin() {
+    local bp
+    bp="$(boreal_backports_suite)"
+    [ -n "$bp" ] || return 0
+    cat <<PIN
+Package: linux-image-* linux-headers-* linux-kbuild-* linux-compiler-* linux-base
+Pin: release a=$bp
+Pin-Priority: 600
+PIN
 }
 
 boreal_id_like() {
