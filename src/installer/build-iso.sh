@@ -193,6 +193,7 @@ install -Dm644 "$SCRIPT_DIR/lib/boreal-common.sh" "$WORK/squashfs-root/usr/local
 install -Dm755 "$SCRIPT_DIR/lib/boreal-mirror-scan" "$WORK/squashfs-root/usr/local/lib/boreal/boreal-mirror-scan"
 install -Dm755 "$SCRIPT_DIR/lib/boreal-driver-options" "$WORK/squashfs-root/usr/local/lib/boreal/boreal-driver-options"
 install -Dm755 "$SCRIPT_DIR/lib/boreal-bootstrap" "$WORK/squashfs-root/usr/local/lib/boreal/boreal-bootstrap"
+install -Dm755 "$SCRIPT_DIR/lib/boreal-chroot-setup" "$WORK/squashfs-root/usr/local/lib/boreal/boreal-chroot-setup"
 install -Dm644 "$SCRIPT_DIR"/lib/mirrors-*.list "$WORK/squashfs-root/usr/local/lib/boreal/"
 cp "$INSTALLER_SH"      "$WORK/squashfs-root/usr/local/bin/borealOS-install"
 chmod +x                "$WORK/squashfs-root/usr/local/bin/borealOS-install"

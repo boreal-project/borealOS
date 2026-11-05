@@ -1,0 +1,59 @@
+#!/bin/bash
+# Finish a bootstrapped system: udev, kernel, initramfs, bootloader packages, networking.
+# Usage: boreal-chroot-setup <target>
+# env: BOREAL_KERNEL_PKG, BOREAL_BOOT_PKGS, BOREAL_HOSTNAME, BOREAL_ROOT_PASSWORD,
+#      BOREAL_USE_BACKPORTS=1, BOREAL_GRUB_DEVICE=/dev/xxx (installs grub there)
+set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+for _lib in "$here/common.sh" "$here/boreal-common.sh"; do
+    [ -f "$_lib" ] && { . "$_lib"; break; }
+done
+
+target="${1:?usage: boreal-chroot-setup <target>}"
+kernel="${BOREAL_KERNEL_PKG:-linux-image-amd64}"
+boot_pkgs="${BOREAL_BOOT_PKGS:-grub-pc}"
+host="${BOREAL_HOSTNAME:-borealos}"
+
+cleanup() {
+    for m in sys proc dev/pts dev; do umount -l "$target/$m" 2>/dev/null || true; done
+}
+trap cleanup EXIT
+
+mount --bind /dev "$target/dev"
+mount --bind /dev/pts "$target/dev/pts"
+mount -t proc proc "$target/proc"
+mount -t sysfs sys "$target/sys"
+cp -L /etc/resolv.conf "$target/etc/resolv.conf"
+
+echo "$host" > "$target/etc/hostname"
+printf '127.0.0.1 localhost\n127.0.1.1 %s\n' "$host" > "$target/etc/hosts"
+
+cr() { chroot "$target" env DEBIAN_FRONTEND=noninteractive "$@"; }
+
+apt_target=()
+if [ -n "${BOREAL_USE_BACKPORTS:-}" ]; then
+    bp="$(boreal_backports_suite)"
+    [ -n "$bp" ] || { echo "backports exist only on the stable channel" >&2; exit 1; }
+    boreal_backports_list > "$target/etc/apt/sources.list.d/backports.list"
+    apt_target=(-t "$bp")
+fi
+
+cr apt-get update
+cr apt-get install -y --no-install-recommends udev kmod e2fsprogs initramfs-tools \
+    network-manager $boot_pkgs
+cr apt-get install -y --no-install-recommends "${apt_target[@]}" "$kernel"
+
+if [ -n "${BOREAL_ROOT_PASSWORD:-}" ]; then
+    echo "root:${BOREAL_ROOT_PASSWORD}" | chroot "$target" chpasswd
+fi
+
+if [ -n "${BOREAL_GRUB_DEVICE:-}" ]; then
+    cat >> "$target/etc/default/grub" <<'GRUBCFG'
+GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200"
+GRUB_TERMINAL="console serial"
+GRUB_SERIAL_COMMAND="serial --speed=115200"
+GRUBCFG
+    cr grub-install --target=i386-pc "$BOREAL_GRUB_DEVICE"
+    cr update-grub
+fi

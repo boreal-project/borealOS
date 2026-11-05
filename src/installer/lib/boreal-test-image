@@ -1,0 +1,39 @@
+#!/bin/bash
+# Build a bootable BIOS disk image of the chosen Boreal base for QEMU. Needs root.
+# Usage: boreal-test-image <image.img> [size]
+# env: same as boreal-bootstrap and boreal-chroot-setup. Root password defaults to "boreal" (test only).
+set -euo pipefail
+
+img="${1:?usage: boreal-test-image <image.img> [size]}"
+size="${2:-8G}"
+[ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
+here="$(cd "$(dirname "$0")" && pwd)"
+
+mnt="$(mktemp -d)"
+loop=""
+cleanup() {
+    mountpoint -q "$mnt" && umount -R "$mnt"
+    [ -n "$loop" ] && losetup -d "$loop"
+    rmdir "$mnt" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+truncate -s "$size" "$img"
+printf 'label: dos\n,,L,*\n' | sfdisk -q "$img"
+loop="$(losetup -fP --show "$img")"
+mkfs.ext4 -q -L boreal-root "${loop}p1"
+mount "${loop}p1" "$mnt"
+
+"$here/boreal-bootstrap" "$mnt"
+
+uuid="$(blkid -s UUID -o value "${loop}p1")"
+echo "UUID=$uuid / ext4 errors=remount-ro 0 1" > "$mnt/etc/fstab"
+
+BOREAL_ROOT_PASSWORD="${BOREAL_ROOT_PASSWORD:-boreal}" BOREAL_GRUB_DEVICE="$loop" \
+    "$here/boreal-chroot-setup" "$mnt"
+
+# Serial login for -nographic QEMU runs.
+echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' >> "$mnt/etc/inittab"
+
+echo "Image ready: $img"
+echo "Boot it: qemu-system-x86_64 -enable-kvm -m 2G -drive file=$img,format=raw -nographic"
