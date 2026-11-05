@@ -21,8 +21,8 @@ DialogHeight=624
 DialogWidth=802
 
 [Containments][57][Wallpaper][org.kde.image][General]
-Image=/home/zoey/Pictures/hakon-sataoen-unsplash-greeter-wallpaper.png
-SlidePaths=/usr/share/wallpapers/
+Image=/usr/share/boreal-artwork/wallpaper-default.png
+SlidePaths=/usr/share/boreal-artwork/
 
 [Containments][58]
 ItemGeometries-2560x1440=
@@ -40,8 +40,8 @@ DialogHeight=630
 DialogWidth=810
 
 [Containments][58][Wallpaper][org.kde.image][General]
-Image=/home/zoey/Pictures/hakon-sataoen-unsplash-greeter-wallpaper.png
-SlidePaths=/usr/share/wallpapers/
+Image=/usr/share/boreal-artwork/wallpaper-default.png
+SlidePaths=/usr/share/boreal-artwork/
 
 [Containments][59]
 activityId=

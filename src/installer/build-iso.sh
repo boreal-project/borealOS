@@ -24,6 +24,8 @@ ok()   { echo -e "${GRN}$1${RST}"; }
 warn() { echo -e "${RED}WARN: $1${RST}"; }
 
 source "$SCRIPT_DIR/desktop/xfce.sh"
+source "$SCRIPT_DIR/lib/boreal-common.sh"
+BOREAL_BP_SUITE="$(boreal_backports_suite)"
 
 # ── Guarantee no display manager autostarts in the LIVE env ────────────────
 # The live boot must land on the tty1 menu (/etc/profile.d/boreal-live.sh),
@@ -60,7 +62,7 @@ enforce_no_live_dm() {
     left="$(find "$root/etc/runlevels" "$root"/etc/rc[0-6S].d \
                 \( -name '*lightdm*' -o -name '*sddm*' -o -name '*gdm*' -o -name '*xdm*' \
                    -o -name '*wdm*' -o -name '*slim*' -o -name '*nodm*' \) \
-                \( -type l -o -type f \) 2>/dev/null)"
+                \( -type l -o -type f \) 2>/dev/null || true)"
     [ -z "$left" ] || die "Display manager still enabled in live env: $left"
     ok "No display manager autostart in the live env."
 }
@@ -187,6 +189,11 @@ cp "$WALLPAPER_ALT"     "$WORK/squashfs-root/opt/borealOS/background_one.png"
 cp "$LOGO"              "$WORK/squashfs-root/opt/borealOS/logo.png"
 [ -f "$GHOST_LOGO" ] && cp "$GHOST_LOGO" "$WORK/squashfs-root/opt/borealOS/logo-ghost.png"
 cp "$BANNER"            "$WORK/squashfs-root/opt/borealOS/banner.png"
+install -Dm644 "$SCRIPT_DIR/lib/boreal-common.sh" "$WORK/squashfs-root/usr/local/lib/boreal/common.sh"
+install -Dm755 "$SCRIPT_DIR/lib/boreal-mirror-scan" "$WORK/squashfs-root/usr/local/lib/boreal/boreal-mirror-scan"
+install -Dm755 "$SCRIPT_DIR/lib/boreal-driver-options" "$WORK/squashfs-root/usr/local/lib/boreal/boreal-driver-options"
+install -Dm755 "$SCRIPT_DIR/lib/boreal-bootstrap" "$WORK/squashfs-root/usr/local/lib/boreal/boreal-bootstrap"
+install -Dm644 "$SCRIPT_DIR"/lib/mirrors-*.list "$WORK/squashfs-root/usr/local/lib/boreal/"
 cp "$INSTALLER_SH"      "$WORK/squashfs-root/usr/local/bin/borealOS-install"
 chmod +x                "$WORK/squashfs-root/usr/local/bin/borealOS-install"
 echo "$DE_NAME"      > "$WORK/squashfs-root/opt/borealOS/de"
@@ -212,6 +219,7 @@ fi
 cp "$WP_MAIN"           "$WORK/squashfs-root/usr/share/boreal-artwork/wallpaper-default.png"
 cp "$WALLPAPER_DEFAULT" "$WORK/squashfs-root/usr/share/boreal-artwork/wallpaper-waves.png"
 cp "$WALLPAPER_ALT"     "$WORK/squashfs-root/usr/share/boreal-artwork/wallpaper-alt.png"
+cp "$SCRIPT_DIR/../../.assets/background-ultrawide-logo-neue.png" "$WORK/squashfs-root/usr/share/boreal-artwork/background-ultrawide-logo-neue.png"
 cp "$LOGO"              "$WORK/squashfs-root/usr/share/boreal-artwork/logo.png"
 [ -f "$GHOST_LOGO" ] && cp "$GHOST_LOGO" "$WORK/squashfs-root/usr/share/boreal-artwork/logo-ghost.png"
 cp "$BANNER"            "$WORK/squashfs-root/usr/share/boreal-artwork/banner.png"
@@ -339,24 +347,7 @@ Categories=System;
 DESKTOP
 
 echo "==> Applying branding..."
-cat > "$WORK/squashfs-root/etc/os-release" <<OS
-NAME="BorealOS"
-PRETTY_NAME="BorealOS 0.0.2"
-ID=borealos
-ID_LIKE=
-VERSION="0.0.2"
-VERSION_ID="0.0.2"
-HOME_URL="https://borealos.org"
-OS
-cat > "$WORK/squashfs-root/etc/lsb-release" <<LSB
-DISTRIB_ID=BorealOS
-DISTRIB_RELEASE=0.0.2
-DISTRIB_CODENAME=boreal
-DISTRIB_DESCRIPTION="BorealOS 0.0.2"
-LSB
-echo "BorealOS"      > "$WORK/squashfs-root/etc/issue"
-echo "BorealOS 0.0.2"  > "$WORK/squashfs-root/etc/issue.net"
-echo "BorealOS"      > "$WORK/squashfs-root/etc/debian_version"
+boreal_write_branding "$WORK/squashfs-root"
 echo "borealOS-live" > "$WORK/squashfs-root/etc/hostname"
 
 echo "==> Writing live TTY menu..."
@@ -381,7 +372,7 @@ while true; do
 BANNER
     printf '\033[0m'
     echo ""
-    echo "  BorealOS 0.0.2 Live  |  DE: $DE"
+    echo "  BorealOS @BOREAL_VERSION@ Live  |  DE: $DE"
     echo ""
     echo "  1) Graphical Install"
     echo "  2) Terminal Installer"
@@ -412,6 +403,7 @@ BANNER
     esac
 done
 LIVEMENU
+sed -i "s/@BOREAL_VERSION@/$BOREAL_VERSION/g" "$WORK/squashfs-root/etc/profile.d/boreal-live.sh"
 chmod +x "$WORK/squashfs-root/etc/profile.d/boreal-live.sh"
 
 cat > "$WORK/squashfs-root/usr/local/bin/boreal-start-graphical" <<'GRAPHICAL'
@@ -525,7 +517,7 @@ DPkg::Options {
    "--force-confold";
 }
 APTCONF
-echo "deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware" > /etc/apt/sources.list
+printf '%s\n' "$(boreal_sources_list)" > /etc/apt/sources.list
 PYVER=\$(ls /usr/lib/ | grep -oP '^python3\.[0-9]+\$' | sort -V | tail -1)
 if [ -n "\$PYVER" ]; then
     mkdir -p /usr/share/python3
@@ -544,10 +536,10 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall python3-minimal ||
 dpkg --configure -a || true
 apt-get update -qq
 
-echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/backports.list
+printf '%s\n' "$(boreal_backports_list)" > /etc/apt/sources.list.d/backports.list
 apt-get update -qq
 
-apt-get install -y --no-install-recommends -t trixie-backports ${KERNEL_PKG}
+apt-get install -y --no-install-recommends ${BOREAL_BP_SUITE:+-t ${BOREAL_BP_SUITE}} ${KERNEL_PKG}
 
 apt-get install -y --no-install-recommends \
     grub-efi-amd64 grub-efi-amd64-bin grub-pc-bin grub-common \
@@ -555,7 +547,7 @@ apt-get install -y --no-install-recommends \
     live-boot live-boot-initramfs-tools \
     openrc \
     network-manager ifupdown dhcpcd5 \
-    parted dosfstools e2fsprogs \
+    parted dosfstools e2fsprogs psmisc \
     cryptsetup cryptsetup-initramfs lvm2 \
     btrfs-progs xfsprogs \
     passwd sudo \
@@ -1034,16 +1026,17 @@ set timeout=10
 set default=0
 set theme=/boot/grub/themes/boreal/theme.txt
 
-menuentry "BorealOS 0.0.2 Live" {
+menuentry "BorealOS @BOREAL_VERSION@ Live" {
     linux /boot/vmlinuz boot=live quiet
     initrd /boot/initrd.img
 }
 
-menuentry "BorealOS 0.0.2 Live (safe mode)" {
+menuentry "BorealOS @BOREAL_VERSION@ Live (safe mode)" {
     linux /boot/vmlinuz boot=live nomodeset
     initrd /boot/initrd.img
 }
 GRUB
+sed -i "s/@BOREAL_VERSION@/$BOREAL_VERSION/g" "$WORK/iso/boot/grub/grub.cfg"
 
 echo "==> Building ISO..."
 GRUB_MKRESCUE_LOG="$WORK/grub-mkrescue.log"

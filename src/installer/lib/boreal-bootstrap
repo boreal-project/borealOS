@@ -1,0 +1,56 @@
+#!/bin/bash
+# Build a minimal base system into <target> for the chosen base, channel and init.
+# Usage: boreal-bootstrap <target>   (env: BOREAL_BASE, BOREAL_CHANNEL, BOREAL_MIRROR, BOREAL_INIT)
+# BOREAL_KEYRING overrides the archive keyring path. BOREAL_DRY_RUN=1 prints the debootstrap command instead of running it.
+
+here="$(cd "$(dirname "$0")" && pwd)"
+for _lib in "$here/common.sh" "$here/boreal-common.sh"; do
+    [ -f "$_lib" ] && { . "$_lib"; break; }
+done
+declare -F boreal_suite >/dev/null || { echo "boreal-common.sh not found" >&2; exit 1; }
+
+target="${1:?usage: boreal-bootstrap <target>}"
+BOREAL_INIT="${BOREAL_INIT:-openrc}"
+
+suite="$(boreal_suite)" || { echo "unsupported base/channel: $BOREAL_BASE/$BOREAL_CHANNEL" >&2; exit 1; }
+mirror="${BOREAL_MIRROR:-$(boreal_default_mirror)}"
+boreal_valid_mirror "$mirror" || { echo "invalid mirror: $mirror" >&2; exit 1; }
+
+# Debian script that matches each Devuan suite; older debootstrap lacks the Devuan ones.
+case "$BOREAL_BASE:$suite" in
+    devuan:excalibur) script=trixie ;;
+    devuan:freia)     script=forky ;;
+    devuan:ceres)     script=sid ;;
+    *)                script="$suite" ;;
+esac
+
+keyring="${BOREAL_KEYRING:-/usr/share/keyrings/${BOREAL_BASE}-archive-keyring.gpg}"
+if [ -z "$BOREAL_DRY_RUN" ] && [ ! -f "$keyring" ]; then
+    echo "keyring missing: $keyring (install ${BOREAL_BASE}-keyring or set BOREAL_KEYRING)" >&2
+    exit 1
+fi
+
+# Devuan only supports sysvinit as PID 1; openrc and runit are layered on top of it.
+case "$BOREAL_BASE:$BOREAL_INIT" in
+    devuan:sysvinit) init_pkgs="sysvinit-core,orphan-sysvinit-scripts" ;;
+    devuan:openrc)   init_pkgs="sysvinit-core,openrc,orphan-sysvinit-scripts" ;;
+    devuan:runit)    init_pkgs="sysvinit-core,runit,runit-run,orphan-sysvinit-scripts" ;;
+    debian:systemd)  init_pkgs="systemd-sysv" ;;
+    *) echo "init '$BOREAL_INIT' is not available on base '$BOREAL_BASE'" >&2; exit 1 ;;
+esac
+include="$init_pkgs,dbus,ca-certificates"
+[ "$BOREAL_BASE" = devuan ] && include="$include,elogind,libpam-elogind,devuan-keyring"
+
+cmd=(debootstrap --arch="$(dpkg --print-architecture)" --variant=minbase
+     --keyring="$keyring" --components="${BOREAL_COMPONENTS// /,}"
+     --include="$include" "$suite" "$target" "$mirror" "/usr/share/debootstrap/scripts/$script")
+
+if [ -n "$BOREAL_DRY_RUN" ]; then
+    printf '%q ' "${cmd[@]}"; echo
+    exit 0
+fi
+
+"${cmd[@]}" || exit 1
+
+boreal_sources_list > "$target/etc/apt/sources.list"
+boreal_write_branding "$target"

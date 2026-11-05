@@ -1,4 +1,9 @@
 #!/bin/sh
+# Sets the default wallpaper on first XFCE login. Waits for the xfdesktop
+# process (not just a property existing - xfdesktop can rename its
+# monitor property once output detection finishes) and only marks done
+# after reading the write back, so a failed run retries next login.
+
 wallpaper=/usr/share/boreal-artwork/wallpaper-default.png
 marker="${XDG_STATE_HOME:-$HOME/.local/state}/boreal/wallpaper-applied"
 
@@ -6,9 +11,19 @@ marker="${XDG_STATE_HOME:-$HOME/.local/state}/boreal/wallpaper-applied"
 [ -f "$wallpaper" ] || exit 0
 command -v xfconf-query >/dev/null 2>&1 || exit 0
 
-monitors=""
 tries=0
 while [ "$tries" -lt 30 ]; do
+    pgrep -x xfdesktop >/dev/null 2>&1 && break
+    sleep 1
+    tries=$((tries + 1))
+done
+pgrep -x xfdesktop >/dev/null 2>&1 || exit 0
+
+sleep 2
+
+monitors=""
+tries=0
+while [ "$tries" -lt 10 ]; do
     monitors=$(xfconf-query -c xfce4-desktop -l 2>/dev/null \
         | sed -n 's#^/backdrop/screen0/\(monitor[^/]*\)/.*#\1#p' | sort -u)
     [ -n "$monitors" ] && break
@@ -17,12 +32,19 @@ while [ "$tries" -lt 30 ]; do
 done
 [ -n "$monitors" ] || exit 0
 
+all_ok=true
 for monitor in $monitors; do
     base="/backdrop/screen0/$monitor/workspace0"
-    xfconf-query -c xfce4-desktop -p "$base/last-image" -n -t string -s "$wallpaper"
-    xfconf-query -c xfce4-desktop -p "$base/image-style" -n -t int -s 5
+    xfconf-query -c xfce4-desktop -p "$base/last-image" -n -t string -s "$wallpaper" 2>/dev/null
+    xfconf-query -c xfce4-desktop -p "$base/image-style" -n -t int -s 5 2>/dev/null
+
+    got="$(xfconf-query -c xfce4-desktop -p "$base/last-image" 2>/dev/null)"
+    [ "$got" = "$wallpaper" ] || all_ok=false
 done
+
 xfdesktop --reload 2>/dev/null
 
-mkdir -p "$(dirname "$marker")"
-touch "$marker"
+if [ "$all_ok" = true ]; then
+    mkdir -p "$(dirname "$marker")"
+    touch "$marker"
+fi

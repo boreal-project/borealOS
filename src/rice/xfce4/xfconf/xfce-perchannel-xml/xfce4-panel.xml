@@ -18,7 +18,8 @@
       <property name="position" type="string" value="p=6;x=0;y=8"/>
       <property name="length" type="double" value="100"/>
       <property name="length-adjust" type="bool" value="true"/>
-      <property name="position-locked" type="bool" value="false"/>
+      <!-- Locked to hide the drag-handle grips at both ends. -->
+      <property name="position-locked" type="bool" value="true"/>
       <property name="icon-size" type="uint" value="24"/>
       <property name="size" type="uint" value="48"/>
       <property name="plugin-ids" type="array">

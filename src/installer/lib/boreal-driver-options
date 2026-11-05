@@ -1,0 +1,53 @@
+#!/bin/bash
+# Detect hardware; print one option per line: id|title|packages|license|default|explanation
+# BOREAL_ROOT lets tests point at a fake /sys and /proc.
+
+R="${BOREAL_ROOT:-}"
+
+opt() { printf '%s|%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "$4" "$5" "$6"; }
+
+opt fw-all "Firmware for your hardware" "firmware-linux" nonfree on \
+"Many Wi-Fi cards, graphics chips and sound devices only work once the vendor's firmware is loaded. This firmware is not open source, but without it some hardware may not work at all. Recommended."
+
+vendor="$(awk -F: '/vendor_id/ { gsub(/ /, "", $2); print $2; exit }' "$R/proc/cpuinfo" 2>/dev/null)"
+if ! grep -qw hypervisor "$R/proc/cpuinfo" 2>/dev/null; then
+    case "$vendor" in
+        GenuineIntel)
+            opt cpu-microcode "Intel CPU microcode updates" "intel-microcode" nonfree on \
+"Intel releases fixes for security flaws and bugs as microcode that your system applies at every boot. Recommended for any Intel processor." ;;
+        AuthenticAMD)
+            opt cpu-microcode "AMD CPU microcode updates" "amd64-microcode" nonfree on \
+"AMD releases fixes for security flaws and bugs as microcode that your system applies at every boot. Recommended for any AMD processor." ;;
+    esac
+fi
+
+seen=""
+add_once() { case " $seen " in *" $1 "*) return 1 ;; esac; seen="$seen $1"; }
+
+for d in "$R"/sys/bus/pci/devices/*; do
+    [ -f "$d/class" ] || continue
+    cls="$(<"$d/class")"; ven="$(<"$d/vendor")"
+    case "$cls" in
+        0x03*)
+            case "$ven" in
+                0x1002) add_once gpu-amd && opt gpu-amd "AMD graphics firmware" "firmware-amd-graphics" nonfree on \
+"Your AMD graphics card uses the open-source driver built into the kernel. It still needs firmware files from AMD to start properly and use all its features. Recommended." ;;
+                0x8086) add_once gpu-intel && opt gpu-intel "Intel graphics firmware" "firmware-intel-graphics" nonfree on \
+"Your Intel graphics uses the open-source driver built into the kernel. Newer chips load firmware for video decoding and power saving. Recommended." ;;
+                0x10de) add_once gpu-nvidia && opt gpu-nvidia "NVIDIA proprietary driver" "nvidia-driver firmware-nvidia-gsp" nonfree off \
+"Your system already works with the open-source Nouveau driver, which needs nothing extra. NVIDIA's own driver is usually faster in games and needed for CUDA, but it is closed source and is built against your kernel. It may need extra steps with Secure Boot. Leave this off if unsure." ;;
+            esac ;;
+        0x0280*)
+            case "$ven" in
+                0x8086) add_once wifi-intel && opt wifi-intel "Intel Wi-Fi firmware" "firmware-iwlwifi" nonfree on "Your Wi-Fi adapter is made by Intel and needs this firmware to connect to networks. Recommended." ;;
+                0x10ec) add_once wifi-realtek && opt wifi-realtek "Realtek Wi-Fi firmware" "firmware-realtek" nonfree on "Your Wi-Fi adapter is made by Realtek and needs this firmware to connect to networks. Recommended." ;;
+                0x168c) add_once wifi-atheros && opt wifi-atheros "Atheros Wi-Fi firmware" "firmware-atheros" nonfree on "Your Wi-Fi adapter is made by Atheros and needs this firmware to connect to networks. Recommended." ;;
+                0x14e4) add_once wifi-broadcom && opt wifi-broadcom "Broadcom Wi-Fi firmware" "firmware-brcm80211" nonfree on "Your Wi-Fi adapter is made by Broadcom and needs this firmware to connect to networks. Some older Broadcom chips need a separate proprietary driver that is not offered here." ;;
+                0x14c3) add_once wifi-mediatek && opt wifi-mediatek "MediaTek Wi-Fi firmware" "firmware-mediatek" nonfree on "Your Wi-Fi adapter is made by MediaTek and needs this firmware to connect to networks. Recommended." ;;
+            esac ;;
+        0x0403*)
+            [ "$ven" = 0x8086 ] && add_once audio-sof && opt audio-sof "Intel sound firmware" "firmware-sof-signed" nonfree on \
+"Many recent Intel laptops need this firmware for built-in speakers and microphones to work. Recommended." ;;
+    esac
+done
+exit 0
